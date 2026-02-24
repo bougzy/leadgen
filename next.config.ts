@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Enable server-side instrumentation for background jobs
+  serverExternalPackages: ['mongodb', 'imapflow'],
 };
 
 export default nextConfig;

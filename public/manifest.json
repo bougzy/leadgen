@@ -1,0 +1,55 @@
+{
+  "name": "LeadGen - Cold Email System",
+  "short_name": "LeadGen",
+  "description": "Lead generation, cold email outreach, and campaign management",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "orientation": "any",
+  "scope": "/",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Search Businesses",
+      "url": "/search",
+      "description": "Find new leads"
+    },
+    {
+      "name": "View Leads",
+      "url": "/leads",
+      "description": "Manage your leads"
+    },
+    {
+      "name": "Campaigns",
+      "url": "/campaigns",
+      "description": "Email campaigns"
+    },
+    {
+      "name": "Inbox",
+      "url": "/inbox",
+      "description": "View replies"
+    }
+  ]
+}
