@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getScheduledEmails, getAllLeads, updateScheduledEmail } from '@/lib/db';
+import { getScheduledEmails, getAllAccounts, updateScheduledEmail } from '@/lib/db';
 import { formatDate } from '@/lib/utils';
-import type { ScheduledEmail, Lead } from '@/types';
+import type { ScheduledEmail, Account } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
@@ -57,7 +57,7 @@ function formatDateTime(dateStr: string): string {
 export default function ScheduledPage() {
   const { addToast } = useToast();
   const [scheduledEmails, setScheduledEmails] = useState<ScheduledEmail[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -66,12 +66,12 @@ export default function ScheduledPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [emails, allLeads] = await Promise.all([
+        const [emails, allAccounts] = await Promise.all([
           getScheduledEmails(),
-          getAllLeads(),
+          getAllAccounts(),
         ]);
         setScheduledEmails(emails);
-        setLeads(allLeads);
+        setAccounts(allAccounts);
         // Auto-select failed tab if there are failed emails, otherwise pending
         const hasFailed = emails.some(e => e.status === 'failed');
         setActiveTab(prev => prev ?? (hasFailed ? 'failed' : 'pending'));
@@ -85,8 +85,8 @@ export default function ScheduledPage() {
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const leadsById = leads.reduce<Record<string, Lead>>((acc, lead) => {
-    acc[lead.id] = lead;
+  const accountsById = accounts.reduce<Record<string, Account>>((acc, account) => {
+    acc[account.id] = account;
     return acc;
   }, {});
 
@@ -185,7 +185,7 @@ export default function ScheduledPage() {
         <EmptyState
           icon="📅"
           title="No Scheduled Emails"
-          description="You haven't scheduled any emails yet. Go to the Email Generator to schedule emails for your leads."
+          description="You haven't scheduled any emails yet. Go to the Email Generator to schedule emails for your accounts."
           actionLabel="Go to Emails"
           onAction={() => window.location.href = '/emails'}
         />
@@ -236,7 +236,7 @@ export default function ScheduledPage() {
               ) : (
                 <div className="space-y-3">
                   {currentEmails.map(email => {
-                    const lead = leadsById[email.leadId];
+                    const account = accountsById[email.accountId];
                     const isFollowUp = email.sequenceId != null && email.stepIndex != null;
                     const errorCategory = email.status === 'failed' ? getErrorCategory(email.error) : null;
 
@@ -257,12 +257,12 @@ export default function ScheduledPage() {
                               To: <span className="font-medium text-gray-800 dark:text-gray-200">{email.to}</span>
                             </p>
 
-                            {/* Lead Name */}
-                            {lead && (
+                            {/* Account Name */}
+                            {account && (
                               <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                                Lead: <span className="font-medium text-gray-700 dark:text-gray-300">{lead.name}</span>
-                                {lead.contactName && (
-                                  <span className="text-gray-400 dark:text-gray-500"> ({lead.contactName})</span>
+                                Account: <span className="font-medium text-gray-700 dark:text-gray-300">{account.businessName}</span>
+                                {account.contactName && (
+                                  <span className="text-gray-400 dark:text-gray-500"> ({account.contactName})</span>
                                 )}
                               </p>
                             )}

@@ -1,4 +1,4 @@
-import type { Lead, UserSettings, EmailTemplate } from '@/types';
+import type { Account, UserSettings, EmailTemplate } from '@/types';
 import { processSpintax } from './utils';
 
 export interface GeneratedEmail {
@@ -150,22 +150,22 @@ export function getBuiltInTemplates(): EmailTemplate[] {
 
 function substituteVariables(
   text: string,
-  lead: Lead,
+  account: Account,
   settings: UserSettings
 ): string {
   const vars: Record<string, string> = {
-    '{business_name}': lead.name,
-    '{contact_name}': lead.contactName || 'there',
-    '{first_name}': lead.contactName?.split(' ')[0] || 'there',
-    '{industry}': lead.industry.toLowerCase(),
-    '{location}': lead.location,
-    '{website}': lead.website || 'None',
+    '{business_name}': account.businessName,
+    '{contact_name}': account.contactName || 'there',
+    '{first_name}': account.contactName?.split(' ')[0] || 'there',
+    '{industry}': account.industry.toLowerCase(),
+    '{location}': account.location,
+    '{website}': account.website || 'None',
     '{your_name}': settings.name || '[Your Name]',
     '{your_email}': settings.email || '[Your Email]',
     '{your_phone}': settings.phone || '[Your Phone]',
     '{service_offering}': settings.serviceOffering || '[Your Service]',
     '{value_prop}': settings.valueProp || 'I can help your business grow online.',
-    '{target_location}': settings.targetLocation || lead.location,
+    '{target_location}': settings.targetLocation || account.location,
   };
 
   let result = text;
@@ -175,18 +175,18 @@ function substituteVariables(
   return result;
 }
 
-function pickBestTemplate(lead: Lead): EmailTemplate {
-  // Pick template based on lead's tags
-  if (lead.tags.includes('no_website') || (!lead.website || lead.website.trim() === '')) {
+function pickBestTemplate(account: Account): EmailTemplate {
+  // Pick template based on account's tags
+  if (account.tags.includes('no_website') || (!account.website || account.website.trim() === '')) {
     return BUILT_IN_TEMPLATES.find(t => t.category === 'no_website')!;
   }
-  if (lead.tags.includes('bad_website') || lead.tags.includes('not_mobile_friendly') || lead.tags.includes('outdated_design') || lead.tags.includes('slow_loading')) {
+  if (account.tags.includes('bad_website') || account.tags.includes('not_mobile_friendly') || account.tags.includes('outdated_design') || account.tags.includes('slow_loading')) {
     return BUILT_IN_TEMPLATES.find(t => t.category === 'bad_website')!;
   }
-  if (lead.tags.includes('no_social')) {
+  if (account.tags.includes('no_social')) {
     return BUILT_IN_TEMPLATES.find(t => t.category === 'no_social')!;
   }
-  if (lead.tags.includes('low_reviews')) {
+  if (account.tags.includes('low_reviews')) {
     return BUILT_IN_TEMPLATES.find(t => t.category === 'low_reviews')!;
   }
   return BUILT_IN_TEMPLATES.find(t => t.category === 'general')!;
@@ -210,7 +210,7 @@ function makeShortVersion(body: string): string {
   return `${greeting}\n\n${pitchLine}\n\n${cta}\n\n${signoff}`;
 }
 
-function makeDetailedVersion(body: string, lead: Lead, settings: UserSettings): string {
+function makeDetailedVersion(body: string, account: Account, settings: UserSettings): string {
   const industryInsights: Record<string, string> = {
     'restaurant': 'Did you know that 97% of customers look up restaurants online before visiting? And 77% check the menu on their phone before deciding where to eat.',
     'gym': 'Research shows that 81% of gym members start their search online. A strong web presence directly impacts membership signups.',
@@ -224,34 +224,34 @@ function makeDetailedVersion(body: string, lead: Lead, settings: UserSettings): 
     'cleaning': 'The cleaning industry has seen a 150% increase in online bookings. Customers prefer to book and pay online.',
   };
 
-  const insight = industryInsights[lead.industry.toLowerCase()] ||
+  const insight = industryInsights[account.industry.toLowerCase()] ||
     `Local businesses that invest in their online presence see an average of 40% more customer inquiries.`;
 
   return `${body.split('\n').slice(0, -2).join('\n')}
 
 ${insight}
 
-I've helped other ${lead.industry.toLowerCase()} businesses in the ${lead.location} area achieve real results. ${settings.valueProp}
+I've helped other ${account.industry.toLowerCase()} businesses in the ${account.location} area achieve real results. ${settings.valueProp}
 
-Would love to share some specific ideas for ${lead.name}. Can we set up a quick 10-minute call this week?
+Would love to share some specific ideas for ${account.businessName}. Can we set up a quick 10-minute call this week?
 
 Best,
 ${settings.name || '[Your Name]'}`;
 }
 
 export function generateEmails(
-  lead: Lead,
+  account: Account,
   settings: UserSettings,
   customTemplate?: EmailTemplate
 ): GeneratedEmail[] {
-  const template = customTemplate || pickBestTemplate(lead);
+  const template = customTemplate || pickBestTemplate(account);
   const subjectIndex = Math.floor(Math.random() * template.subjectLines.length);
 
-  const fullBody = processSpintax(substituteVariables(template.body, lead, settings));
-  const subject = processSpintax(substituteVariables(template.subjectLines[subjectIndex], lead, settings));
+  const fullBody = processSpintax(substituteVariables(template.body, account, settings));
+  const subject = processSpintax(substituteVariables(template.subjectLines[subjectIndex], account, settings));
 
   const shortBody = makeShortVersion(fullBody);
-  const detailedBody = makeDetailedVersion(fullBody, lead, settings);
+  const detailedBody = makeDetailedVersion(fullBody, account, settings);
 
   return [
     {
@@ -263,7 +263,7 @@ export function generateEmails(
     {
       subject: substituteVariables(
         template.subjectLines[(subjectIndex + 1) % template.subjectLines.length],
-        lead,
+        account,
         settings
       ),
       body: fullBody,
@@ -273,7 +273,7 @@ export function generateEmails(
     {
       subject: substituteVariables(
         template.subjectLines[(subjectIndex + 2) % template.subjectLines.length],
-        lead,
+        account,
         settings
       ),
       body: detailedBody,
@@ -283,7 +283,7 @@ export function generateEmails(
   ];
 }
 
-export function getAllSubjectLines(lead: Lead, settings: UserSettings): string[] {
-  const template = pickBestTemplate(lead);
-  return template.subjectLines.map(s => substituteVariables(s, lead, settings));
+export function getAllSubjectLines(account: Account, settings: UserSettings): string[] {
+  const template = pickBestTemplate(account);
+  return template.subjectLines.map(s => substituteVariables(s, account, settings));
 }

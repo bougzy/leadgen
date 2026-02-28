@@ -2,12 +2,12 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getAllLeads, getSettings, addEmail, updateLead, addActivity, addScheduledEmail, getTodaySendCount, incrementSendLog, isEmailUnsubscribed, getActiveSmtpAccounts } from '@/lib/db';
+import { getAllAccounts, getSettings, addEmail, updateAccount, addActivity, addScheduledEmail, getTodaySendCount, incrementSendLog, isEmailUnsubscribed, getActiveSmtpAccounts } from '@/lib/db';
 import { generateEmails } from '@/lib/templates';
 import type { GeneratedEmail } from '@/lib/templates';
 import { getScoreColor, getScoreBgColor, getScoreLabel } from '@/lib/scoring';
 import { generateId, createActivity, copyToClipboard, createMailtoLink, createGmailLink, appendUnsubscribeFooter, getWarmupLimit } from '@/lib/utils';
-import type { Lead, UserSettings, ScheduledEmail, SmtpAccount } from '@/types';
+import type { Account, UserSettings, ScheduledEmail, SmtpAccount } from '@/types';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useToast } from '@/components/ui/Toast';
@@ -16,10 +16,10 @@ function EmailContent() {
   const searchParams = useSearchParams();
   const { addToast } = useToast();
 
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [smtpAccounts, setSmtpAccounts] = useState<SmtpAccount[]>([]);
-  const [selectedLeadId, setSelectedLeadId] = useState<string>('');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [generatedEmails, setGeneratedEmails] = useState<GeneratedEmail[]>([]);
   const [activeVariation, setActiveVariation] = useState<number>(0);
   const [editedSubject, setEditedSubject] = useState('');
@@ -36,13 +36,13 @@ function EmailContent() {
   useEffect(() => {
     async function load() {
       try {
-        const [l, s, accounts] = await Promise.all([getAllLeads(), getSettings(), getActiveSmtpAccounts()]);
-        setLeads(l);
+        const [l, s, smtpAccts] = await Promise.all([getAllAccounts(), getSettings(), getActiveSmtpAccounts()]);
+        setAccounts(l);
         setSettings(s);
-        setSmtpAccounts(accounts);
-        const paramId = searchParams.get('leadId');
-        if (paramId && l.find(lead => lead.id === paramId)) {
-          setSelectedLeadId(paramId);
+        setSmtpAccounts(smtpAccts);
+        const paramId = searchParams.get('accountId') || searchParams.get('leadId');
+        if (paramId && l.find(account => account.id === paramId)) {
+          setSelectedAccountId(paramId);
         }
       } catch (err) {
         console.error('Failed to load data:', err);
@@ -53,13 +53,13 @@ function EmailContent() {
     load();
   }, [searchParams]);
 
-  const selectedLead = leads.find(l => l.id === selectedLeadId);
+  const selectedAccount = accounts.find(a => a.id === selectedAccountId);
 
   function handleGenerate() {
-    if (!selectedLead || !settings) return;
+    if (!selectedAccount || !settings) return;
     setGenerating(true);
     setTimeout(() => {
-      const emails = generateEmails(selectedLead, settings);
+      const emails = generateEmails(selectedAccount, settings);
       setGeneratedEmails(emails);
       setActiveVariation(0);
       if (emails.length > 0) {
@@ -88,20 +88,20 @@ function EmailContent() {
   }
 
   function handleOpenGmail() {
-    if (!selectedLead) return;
-    window.open(createGmailLink(selectedLead.email || '', editedSubject, editedBody), '_blank');
+    if (!selectedAccount) return;
+    window.open(createGmailLink(selectedAccount.contactEmail || '', editedSubject, editedBody), '_blank');
   }
 
   function handleOpenMailto() {
-    if (!selectedLead) return;
-    window.location.href = createMailtoLink(selectedLead.email || '', editedSubject, editedBody);
+    if (!selectedAccount) return;
+    window.location.href = createMailtoLink(selectedAccount.contactEmail || '', editedSubject, editedBody);
   }
 
-  async function saveEmailAndUpdateLead(trackingId?: string) {
-    if (!selectedLead || !settings) return;
+  async function saveEmailAndUpdateAccount(trackingId?: string) {
+    if (!selectedAccount || !settings) return;
     const email = {
       id: generateId(),
-      leadId: selectedLead.id,
+      accountId: selectedAccount.id,
       subject: editedSubject,
       body: editedBody,
       variation: generatedEmails[activeVariation]?.variation || 'medium' as const,
@@ -112,20 +112,20 @@ function EmailContent() {
       trackingId,
     };
     await addEmail(email);
-    const updatedLead = {
-      ...selectedLead,
-      status: selectedLead.status === 'new' ? 'contacted' as const : selectedLead.status,
+    const updatedAccount = {
+      ...selectedAccount,
+      lifecycleStage: selectedAccount.lifecycleStage === 'prospect' ? 'contacted' as const : selectedAccount.lifecycleStage,
       lastContacted: new Date().toISOString(),
     };
-    await updateLead(updatedLead);
-    await addActivity(createActivity('email_sent', `Sent email to ${selectedLead.name}`, selectedLead.id));
-    setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l));
+    await updateAccount(updatedAccount);
+    await addActivity(createActivity('email_sent', `Sent email to ${selectedAccount.businessName}`, selectedAccount.id));
+    setAccounts(prev => prev.map(a => a.id === updatedAccount.id ? updatedAccount : a));
   }
 
   async function handleMarkSent() {
-    if (!selectedLead || !settings) return;
+    if (!selectedAccount || !settings) return;
     try {
-      await saveEmailAndUpdateLead();
+      await saveEmailAndUpdateAccount();
       const templateId = generatedEmails[activeVariation]?.templateUsed;
       if (templateId) {
         const { updateTemplateStats } = await import('@/lib/db');
@@ -138,9 +138,9 @@ function EmailContent() {
   }
 
   async function handleSendEmail() {
-    if (!selectedLead || !settings) return;
-    if (!selectedLead.email) {
-      addToast('This lead has no email address', 'error');
+    if (!selectedAccount || !settings) return;
+    if (!selectedAccount.contactEmail) {
+      addToast('This account has no email address', 'error');
       return;
     }
     if (smtpAccounts.length === 0 && (!settings.smtpEmail || !settings.smtpPassword)) {
@@ -153,7 +153,7 @@ function EmailContent() {
       const verifyRes = await fetch('/api/verify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: selectedLead.email }),
+        body: JSON.stringify({ email: selectedAccount.contactEmail }),
       });
       const verifyData = await verifyRes.json();
       if (!verifyData.valid) {
@@ -165,7 +165,7 @@ function EmailContent() {
     }
 
     // Check unsubscribe list
-    const unsubscribed = await isEmailUnsubscribed(selectedLead.email);
+    const unsubscribed = await isEmailUnsubscribed(selectedAccount.contactEmail);
     if (unsubscribed) {
       addToast('This email address has unsubscribed and cannot receive emails', 'error');
       return;
@@ -188,7 +188,7 @@ function EmailContent() {
       // Append CAN-SPAM unsubscribe footer
       const bodyWithFooter = appendUnsubscribeFooter(
         editedBody,
-        selectedLead.email,
+        selectedAccount.contactEmail,
         settings.unsubscribeMessage,
         settings.businessAddress,
         trackingId
@@ -198,7 +198,7 @@ function EmailContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: selectedLead.email,
+          to: selectedAccount.contactEmail,
           subject: editedSubject,
           body: bodyWithFooter,
           ...(smtpAccounts.length > 0
@@ -212,7 +212,7 @@ function EmailContent() {
         // Mark email as bounced
         const bouncedEmail = {
           id: generateId(),
-          leadId: selectedLead.id,
+          accountId: selectedAccount.id,
           subject: editedSubject,
           body: editedBody,
           variation: generatedEmails[activeVariation]?.variation || 'medium' as const,
@@ -223,7 +223,7 @@ function EmailContent() {
           bouncedAt: new Date().toISOString(),
         };
         await addEmail(bouncedEmail);
-        await addActivity(createActivity('email_bounced', `Email to ${selectedLead.name} bounced: ${data.bounceType}`, selectedLead.id));
+        await addActivity(createActivity('email_bounced', `Email to ${selectedAccount.businessName} bounced: ${data.bounceType}`, selectedAccount.id));
         addToast(`Email bounced (${data.bounceType}): ${data.error}`, 'error');
         setSending(false);
         return;
@@ -231,7 +231,7 @@ function EmailContent() {
       if (data.error) {
         addToast(data.error, 'error');
       } else {
-        await saveEmailAndUpdateLead(trackingId);
+        await saveEmailAndUpdateAccount(trackingId);
         const templateId = generatedEmails[activeVariation]?.templateUsed;
         if (templateId) {
           const { updateTemplateStats } = await import('@/lib/db');
@@ -240,7 +240,7 @@ function EmailContent() {
         // Increment daily send log
         const todayDate = new Date().toISOString().split('T')[0];
         await incrementSendLog(todayDate);
-        addToast(`Email sent to ${selectedLead.email}!`);
+        addToast(`Email sent to ${selectedAccount.contactEmail}!`);
       }
     } catch {
       addToast('Failed to send email', 'error');
@@ -250,9 +250,9 @@ function EmailContent() {
   }
 
   async function handleScheduleSend() {
-    if (!selectedLead || !settings) return;
-    if (!selectedLead.email) {
-      addToast('This lead has no email address', 'error');
+    if (!selectedAccount || !settings) return;
+    if (!selectedAccount.contactEmail) {
+      addToast('This account has no email address', 'error');
       return;
     }
     if (!scheduleDateTime) {
@@ -271,7 +271,7 @@ function EmailContent() {
       const verifyRes = await fetch('/api/verify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: selectedLead.email }),
+        body: JSON.stringify({ email: selectedAccount.contactEmail }),
       });
       const verifyData = await verifyRes.json();
       if (!verifyData.valid) {
@@ -283,7 +283,7 @@ function EmailContent() {
     }
 
     // Check unsubscribe list
-    const unsubscribed = await isEmailUnsubscribed(selectedLead.email);
+    const unsubscribed = await isEmailUnsubscribed(selectedAccount.contactEmail);
     if (unsubscribed) {
       addToast('This email address has unsubscribed and cannot receive emails', 'error');
       return;
@@ -295,7 +295,7 @@ function EmailContent() {
       // Append CAN-SPAM unsubscribe footer
       const bodyWithFooter = appendUnsubscribeFooter(
         editedBody,
-        selectedLead.email,
+        selectedAccount.contactEmail,
         settings.unsubscribeMessage,
         settings.businessAddress,
         trackingId
@@ -303,8 +303,8 @@ function EmailContent() {
 
       const scheduled: ScheduledEmail = {
         id: generateId(),
-        leadId: selectedLead.id,
-        to: selectedLead.email,
+        accountId: selectedAccount.id,
+        to: selectedAccount.contactEmail,
         subject: editedSubject,
         body: bodyWithFooter,
         scheduledAt: scheduledDate.toISOString(),
@@ -313,7 +313,7 @@ function EmailContent() {
       };
 
       await addScheduledEmail(scheduled);
-      await addActivity(createActivity('email_scheduled', `Scheduled email to ${selectedLead.name} for ${scheduledDate.toLocaleString()}`, selectedLead.id));
+      await addActivity(createActivity('email_scheduled', `Scheduled email to ${selectedAccount.businessName} for ${scheduledDate.toLocaleString()}`, selectedAccount.id));
       addToast(`Email scheduled for ${scheduledDate.toLocaleString()}`);
       setShowSchedulePicker(false);
       setScheduleDateTime('');
@@ -335,37 +335,37 @@ function EmailContent() {
         <p className="text-gray-600 dark:text-gray-400 mt-1">Generate personalized cold emails from templates</p>
       </div>
 
-      {leads.length === 0 ? (
-        <EmptyState icon="✉️" title="No Leads Available" description="Add some leads first, then come back to generate emails." actionLabel="Go to Leads" onAction={() => window.location.href = '/leads'} />
+      {accounts.length === 0 ? (
+        <EmptyState icon="✉️" title="No Accounts Available" description="Add some accounts first, then come back to generate emails." actionLabel="Go to Accounts" onAction={() => window.location.href = '/leads'} />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left panel */}
           <div className="lg:col-span-1">
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select a Lead</label>
-              <select value={selectedLeadId} onChange={e => { setSelectedLeadId(e.target.value); setGeneratedEmails([]); }}
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select an Account</label>
+              <select value={selectedAccountId} onChange={e => { setSelectedAccountId(e.target.value); setGeneratedEmails([]); }}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm mb-4">
-                <option value="">Choose a lead...</option>
-                {leads.map(l => <option key={l.id} value={l.id}>{l.name} — {l.industry} ({l.leadScore}pts)</option>)}
+                <option value="">Choose an account...</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.businessName} — {a.industry} ({a.leadScore}pts)</option>)}
               </select>
 
-              {selectedLead && (
+              {selectedAccount && (
                 <div className="space-y-3">
                   <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">{selectedLead.name}</h3>
-                    {selectedLead.contactName && <p className="text-sm text-gray-600 dark:text-gray-400">{selectedLead.contactName}</p>}
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{selectedLead.industry} · {selectedLead.location}</p>
-                    {selectedLead.email && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{selectedLead.email}</p>}
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{selectedAccount.businessName}</h3>
+                    {selectedAccount.contactName && <p className="text-sm text-gray-600 dark:text-gray-400">{selectedAccount.contactName}</p>}
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{selectedAccount.industry} · {selectedAccount.location}</p>
+                    {selectedAccount.contactEmail && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{selectedAccount.contactEmail}</p>}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${getScoreColor(selectedLead.leadScore)} ${getScoreBgColor(selectedLead.leadScore)}`}>Score: {selectedLead.leadScore}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{getScoreLabel(selectedLead.leadScore)}</span>
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${getScoreColor(selectedAccount.leadScore)} ${getScoreBgColor(selectedAccount.leadScore)}`}>Score: {selectedAccount.leadScore}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{getScoreLabel(selectedAccount.leadScore)}</span>
                   </div>
-                  {selectedLead.tags.length > 0 && (
+                  {selectedAccount.tags.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Issues:</p>
                       <div className="flex flex-wrap gap-1">
-                        {selectedLead.tags.map(tag => (
+                        {selectedAccount.tags.map(tag => (
                           <span key={tag} className="px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-xs">{tag.replace(/_/g, ' ')}</span>
                         ))}
                       </div>
@@ -384,7 +384,7 @@ function EmailContent() {
           <div className="lg:col-span-2">
             {generatedEmails.length === 0 ? (
               <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-12">
-                <EmptyState icon="✍️" title="No Email Generated Yet" description={selectedLead ? 'Click "Generate Emails" to create personalized email variations.' : 'Select a lead from the left panel to get started.'} />
+                <EmptyState icon="✍️" title="No Email Generated Yet" description={selectedAccount ? 'Click "Generate Emails" to create personalized email variations.' : 'Select an account from the left panel to get started.'} />
               </div>
             ) : (
               <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
@@ -419,11 +419,11 @@ function EmailContent() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => setIsEditing(!isEditing)} className="px-3 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-sm font-medium">{isEditing ? 'Done Editing' : 'Edit'}</button>
-                    <button onClick={handleSendEmail} disabled={sending || !selectedLead?.email}
+                    <button onClick={handleSendEmail} disabled={sending || !selectedAccount?.contactEmail}
                       className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                       {sending ? 'Sending...' : 'Send Email'}
                     </button>
-                    <button onClick={() => setShowSchedulePicker(!showSchedulePicker)} disabled={!selectedLead?.email}
+                    <button onClick={() => setShowSchedulePicker(!showSchedulePicker)} disabled={!selectedAccount?.contactEmail}
                       className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                       Schedule Send
                     </button>

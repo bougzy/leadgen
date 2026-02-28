@@ -114,7 +114,7 @@ export async function pollImapAccount(account: SmtpAccount): Promise<number> {
 
           // Try to match to a sent email
           let matchedEmailId: string | undefined;
-          let matchedLeadId: string | undefined;
+          let matchedAccountId: string | undefined;
 
           // Match by inReplyTo header
           if (inReplyTo) {
@@ -123,7 +123,7 @@ export async function pollImapAccount(account: SmtpAccount): Promise<number> {
             );
             if (matchedEmail) {
               matchedEmailId = matchedEmail.id;
-              matchedLeadId = matchedEmail.leadId;
+              matchedAccountId = matchedEmail.accountId;
             }
           }
 
@@ -140,7 +140,7 @@ export async function pollImapAccount(account: SmtpAccount): Promise<number> {
               );
               if (matchedEmail) {
                 matchedEmailId = matchedEmail.id;
-                matchedLeadId = matchedEmail.leadId;
+                matchedAccountId = matchedEmail.accountId;
               }
             }
           }
@@ -155,7 +155,7 @@ export async function pollImapAccount(account: SmtpAccount): Promise<number> {
             messageId,
             inReplyTo,
             matchedEmailId,
-            matchedLeadId,
+            matchedAccountId,
             replyCategory,
             isRead: false,
             receivedAt: receivedDate,
@@ -166,25 +166,27 @@ export async function pollImapAccount(account: SmtpAccount): Promise<number> {
           await db.addInboxReply(reply);
           newReplyCount++;
 
-          // If matched to a lead, update lead and email records
-          if (matchedLeadId) {
-            const lead = await db.getLead(matchedLeadId);
+          // If matched to an account, update account and email records
+          if (matchedAccountId) {
+            const acct = await db.getAccount(matchedAccountId);
 
-            if (lead) {
+            if (acct) {
               if (replyCategory === 'interested') {
-                lead.status = 'responded';
-                lead.pipelineStage = 'engaged';
-                await db.updateLead(lead);
+                acct.lifecycleStage = 'engaged';
+                acct.pipelineStage = 'engaged';
+                acct.updatedAt = new Date().toISOString();
+                await db.updateAccount(acct);
               } else if (replyCategory === 'unsubscribe') {
-                lead.unsubscribed = true;
-                await db.updateLead(lead);
+                acct.unsubscribed = true;
+                acct.updatedAt = new Date().toISOString();
+                await db.updateAccount(acct);
 
                 // Add unsubscribe record
-                if (lead.email) {
+                if (acct.contactEmail) {
                   await db.addUnsubscribe({
                     id: generateId(),
-                    email: lead.email,
-                    leadId: lead.id,
+                    email: acct.contactEmail,
+                    accountId: acct.id,
                     reason: 'Detected via IMAP reply',
                     unsubscribedAt: new Date().toISOString(),
                   });
@@ -206,7 +208,7 @@ export async function pollImapAccount(account: SmtpAccount): Promise<number> {
             const activity = createActivity(
               'response_received',
               `Reply detected from ${fromAddress}: ${replyCategory}`,
-              matchedLeadId,
+              matchedAccountId,
             );
             await db.addActivity(activity);
           }

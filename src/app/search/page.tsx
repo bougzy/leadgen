@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { getSettings, addLead, addActivity, findDuplicateLead } from '@/lib/db';
+import { getSettings, addAccount, addActivity, findDuplicateAccount } from '@/lib/db';
 import { calculateLeadScore } from '@/lib/scoring';
 import { getScoreColor, getScoreBgColor } from '@/lib/scoring';
 import { generateId, createActivity } from '@/lib/utils';
-import type { UserSettings, SearchResult, Lead } from '@/types';
+import type { UserSettings, SearchResult, Account } from '@/types';
 import { INDUSTRIES } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
@@ -172,40 +172,43 @@ export default function SearchPage() {
     return Math.min(score, 100);
   }
 
-  async function handleAddLead(result: SearchResult) {
+  async function handleAddAccount(result: SearchResult) {
     if (!settings) return;
     try {
-      // Check for duplicate lead
-      const duplicate = await findDuplicateLead(result.name, result.address);
+      // Check for duplicate account
+      const duplicate = await findDuplicateAccount(result.name, result.address);
       if (duplicate) {
-        addToast('Lead already exists', 'error');
+        addToast('Account already exists', 'error');
         return;
       }
 
-      const lead: Lead = {
+      const account: Account = {
         id: generateId(),
-        name: result.name,
+        businessName: result.name,
         industry,
         location: result.address,
         website: result.website,
-        email: result.emails[0],
-        phone: result.phone,
+        contactEmail: result.emails[0],
+        contactPhone: result.phone,
         tags: result.tags,
         leadScore: 0,
         notes: `Rating: ${result.rating || 'N/A'} | Reviews: ${result.reviewCount || 0} | Found via Google Places`,
-        status: 'new',
+        lifecycleStage: 'prospect',
         pipelineStage: 'prospect',
         source: 'search',
+        services: [],
+        serviceArea: [],
         dateAdded: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         customData: { rating: result.rating, reviewCount: result.reviewCount, placeId: result.placeId },
       };
-      lead.leadScore = calculateLeadScore(lead);
-      await addLead(lead);
-      await addActivity(createActivity('lead_added', `Added lead from search: ${lead.name}`, lead.id));
+      account.leadScore = calculateLeadScore(account);
+      await addAccount(account);
+      await addActivity(createActivity('lead_added', `Added account from search: ${account.businessName}`, account.id));
       setAddedIds(prev => new Set([...prev, result.placeId]));
-      addToast(`Added ${result.name} to leads`);
+      addToast(`Added ${result.name} to accounts`);
     } catch {
-      addToast('Failed to add lead', 'error');
+      addToast('Failed to add account', 'error');
     }
   }
 
@@ -215,39 +218,42 @@ export default function SearchPage() {
     let count = 0;
     for (const result of toAdd) {
       try {
-        // Check for duplicate lead
-        const duplicate = await findDuplicateLead(result.name, result.address);
+        // Check for duplicate account
+        const duplicate = await findDuplicateAccount(result.name, result.address);
         if (duplicate) {
-          addToast('Lead already exists', 'error');
+          addToast('Account already exists', 'error');
           continue;
         }
 
-        const lead: Lead = {
+        const account: Account = {
           id: generateId(),
-          name: result.name,
+          businessName: result.name,
           industry,
           location: result.address,
           website: result.website,
-          email: result.emails[0],
-          phone: result.phone,
+          contactEmail: result.emails[0],
+          contactPhone: result.phone,
           tags: result.tags,
           leadScore: 0,
           notes: `Rating: ${result.rating || 'N/A'} | Reviews: ${result.reviewCount || 0} | Found via Google Places`,
-          status: 'new',
+          lifecycleStage: 'prospect',
           pipelineStage: 'prospect',
           source: 'search',
+          services: [],
+          serviceArea: [],
           dateAdded: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
           customData: { rating: result.rating, reviewCount: result.reviewCount, placeId: result.placeId },
         };
-        lead.leadScore = calculateLeadScore(lead);
-        await addLead(lead);
+        account.leadScore = calculateLeadScore(account);
+        await addAccount(account);
         setAddedIds(prev => new Set([...prev, result.placeId]));
         count++;
       } catch { /* skip failed */ }
     }
     if (count > 0) {
-      await addActivity(createActivity('lead_added', `Bulk added ${count} leads from search`));
-      addToast(`Added ${count} leads`);
+      await addActivity(createActivity('lead_added', `Bulk added ${count} accounts from search`));
+      addToast(`Added ${count} accounts`);
     }
   }
 
@@ -314,7 +320,7 @@ export default function SearchPage() {
                 </p>
                 <button onClick={handleAddAll} disabled={addedIds.size === results.length}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium disabled:opacity-50">
-                  {addedIds.size === results.length ? 'All Added' : `Add All ${results.length - addedIds.size} to Leads`}
+                  {addedIds.size === results.length ? 'All Added' : `Add All ${results.length - addedIds.size} to Accounts`}
                 </button>
               </div>
 
@@ -377,9 +383,9 @@ export default function SearchPage() {
                             {addedIds.has(result.placeId) ? (
                               <span className="px-3 py-1.5 text-xs font-medium text-green-600 dark:text-green-400">Added ✓</span>
                             ) : (
-                              <button onClick={() => handleAddLead(result)}
+                              <button onClick={() => handleAddAccount(result)}
                                 className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors">
-                                Add to Leads
+                                Add to Accounts
                               </button>
                             )}
                           </td>

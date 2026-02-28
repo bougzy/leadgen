@@ -15,8 +15,11 @@ const navItems = [
   { href: '/campaigns', label: 'Campaigns', icon: '📣' },
   { href: '/templates', label: 'Templates', icon: '📄' },
   { href: '/pipeline', label: 'Pipeline', icon: '📈' },
+  { href: '/clients', label: 'Clients', icon: '🏪' },
   { href: '/sequences', label: 'Follow-ups', icon: '🔄' },
   { href: '/scheduled', label: 'Scheduled', icon: '📅' },
+  { href: '/automation', label: 'Automation', icon: '🔧' },
+  { href: '/analytics', label: 'Analytics', icon: '📉' },
   { href: '/assistant', label: 'Assistant', icon: '🤖' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ];

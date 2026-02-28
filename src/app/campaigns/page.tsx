@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { getAllCampaigns, getAllLeads, addCampaign, updateCampaign, deleteCampaign, addActivity, updateLead, getSettings, addEmail, getTodaySendCount, incrementSendLog, isEmailUnsubscribed, getEmailsByLead, updateEmail, getActiveSmtpAccounts } from '@/lib/db';
+import { getAllCampaigns, getAllAccounts, addCampaign, updateCampaign, deleteCampaign, addActivity, updateAccount, getSettings, addEmail, getTodaySendCount, incrementSendLog, isEmailUnsubscribed, getEmailsByAccount, updateEmail, getActiveSmtpAccounts } from '@/lib/db';
 import { generateEmails } from '@/lib/templates';
 import { generateId, createActivity, formatDate, copyToClipboard, appendUnsubscribeFooter, getWarmupLimit } from '@/lib/utils';
-import type { Lead, Campaign, UserSettings, EmailStatus, SmtpAccount } from '@/types';
+import type { Account, Campaign, UserSettings, EmailStatus, SmtpAccount } from '@/types';
 import Modal from '@/components/ui/Modal';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -13,7 +13,7 @@ import { useToast } from '@/components/ui/Toast';
 export default function CampaignsPage() {
   const { addToast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [smtpAccounts, setSmtpAccounts] = useState<SmtpAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,18 +21,18 @@ export default function CampaignsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
-  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
 
   const [viewingCampaign, setViewingCampaign] = useState<Campaign | null>(null);
-  const [campaignLeads, setCampaignLeads] = useState<Lead[]>([]);
+  const [campaignAccounts, setCampaignAccounts] = useState<Account[]>([]);
 
   const loadData = useCallback(async () => {
     try {
-      const [c, l, s, accounts] = await Promise.all([getAllCampaigns(), getAllLeads(), getSettings(), getActiveSmtpAccounts()]);
+      const [c, accts, s, smtpAccts] = await Promise.all([getAllCampaigns(), getAllAccounts(), getSettings(), getActiveSmtpAccounts()]);
       setCampaigns(c.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-      setLeads(l);
+      setAccounts(accts);
       setSettings(s);
-      setSmtpAccounts(accounts);
+      setSmtpAccounts(smtpAccts);
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -43,39 +43,39 @@ export default function CampaignsPage() {
   useEffect(() => { loadData(); }, [loadData]);
 
   async function handleCreate() {
-    if (!newName.trim() || selectedLeadIds.size === 0) {
-      addToast('Please enter a name and select leads', 'error');
+    if (!newName.trim() || selectedAccountIds.size === 0) {
+      addToast('Please enter a name and select accounts', 'error');
       return;
     }
     try {
       const emailStatuses: Record<string, EmailStatus> = {};
-      selectedLeadIds.forEach(id => { emailStatuses[id] = 'drafted'; });
+      selectedAccountIds.forEach(id => { emailStatuses[id] = 'drafted'; });
       const campaign: Campaign = {
         id: generateId(), name: newName.trim(), description: newDesc.trim(),
-        leadIds: Array.from(selectedLeadIds), status: 'active', emailStatuses,
+        accountIds: Array.from(selectedAccountIds), status: 'active', emailStatuses,
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       };
       // Cross-campaign deduplication warning
       const activeCampaigns = campaigns.filter(c => c.status === 'active');
-      const duplicateLeads: string[] = [];
-      for (const id of Array.from(selectedLeadIds)) {
+      const duplicateAccounts: string[] = [];
+      for (const id of Array.from(selectedAccountIds)) {
         for (const ac of activeCampaigns) {
-          if (ac.leadIds.includes(id) && (ac.emailStatuses[id] === 'drafted' || ac.emailStatuses[id] === 'sent')) {
-            const lead = leads.find(l => l.id === id);
-            if (lead) duplicateLeads.push(lead.name);
+          if (ac.accountIds.includes(id) && (ac.emailStatuses[id] === 'drafted' || ac.emailStatuses[id] === 'sent')) {
+            const account = accounts.find(a => a.id === id);
+            if (account) duplicateAccounts.push(account.businessName);
             break;
           }
         }
       }
-      if (duplicateLeads.length > 0) {
-        const proceed = confirm(`Warning: ${duplicateLeads.length} lead(s) are already in active campaigns:\n${duplicateLeads.slice(0, 5).join(', ')}${duplicateLeads.length > 5 ? `... and ${duplicateLeads.length - 5} more` : ''}\n\nContinue anyway?`);
+      if (duplicateAccounts.length > 0) {
+        const proceed = confirm(`Warning: ${duplicateAccounts.length} account(s) are already in active campaigns:\n${duplicateAccounts.slice(0, 5).join(', ')}${duplicateAccounts.length > 5 ? `... and ${duplicateAccounts.length - 5} more` : ''}\n\nContinue anyway?`);
         if (!proceed) return;
       }
 
       await addCampaign(campaign);
       await addActivity(createActivity('campaign_created', `Created campaign: ${campaign.name}`, undefined, campaign.id));
       addToast('Campaign created');
-      setShowCreate(false); setNewName(''); setNewDesc(''); setSelectedLeadIds(new Set());
+      setShowCreate(false); setNewName(''); setNewDesc(''); setSelectedAccountIds(new Set());
       loadData();
     } catch { addToast('Failed to create campaign', 'error'); }
   }
@@ -88,34 +88,34 @@ export default function CampaignsPage() {
 
   function handleView(campaign: Campaign) {
     setViewingCampaign(campaign);
-    setCampaignLeads(leads.filter(l => campaign.leadIds.includes(l.id)));
+    setCampaignAccounts(accounts.filter(a => campaign.accountIds.includes(a.id)));
   }
 
-  async function handleEmailStatusChange(campaignId: string, leadId: string, status: EmailStatus) {
+  async function handleEmailStatusChange(campaignId: string, accountId: string, status: EmailStatus) {
     const campaign = campaigns.find(c => c.id === campaignId);
     if (!campaign) return;
-    const updated = { ...campaign, emailStatuses: { ...campaign.emailStatuses, [leadId]: status }, updatedAt: new Date().toISOString() };
+    const updated = { ...campaign, emailStatuses: { ...campaign.emailStatuses, [accountId]: status }, updatedAt: new Date().toISOString() };
     const allStatuses = Object.values(updated.emailStatuses);
     if (allStatuses.every(s => s === 'sent' || s === 'responded')) updated.status = 'completed';
     await updateCampaign(updated);
     if (status === 'sent') {
-      const lead = leads.find(l => l.id === leadId);
-      if (lead && lead.status === 'new') await updateLead({ ...lead, status: 'contacted', lastContacted: new Date().toISOString() });
-      await addActivity(createActivity('email_sent', `Sent email to ${lead?.name || 'lead'} (campaign: ${campaign.name})`, leadId, campaignId));
+      const account = accounts.find(a => a.id === accountId);
+      if (account && account.lifecycleStage === 'prospect') await updateAccount({ ...account, lifecycleStage: 'contacted', pipelineStage: 'outreach', lastContacted: new Date().toISOString() });
+      await addActivity(createActivity('email_sent', `Sent email to ${account?.businessName || 'account'} (campaign: ${campaign.name})`, accountId, campaignId));
     }
     if (status === 'responded') {
-      const lead = leads.find(l => l.id === leadId);
-      if (lead) {
-        const leadEmails = await getEmailsByLead(leadId);
-        const lastSent = leadEmails.filter(e => e.sentAt).sort((a, b) => new Date(b.sentAt!).getTime() - new Date(a.sentAt!).getTime())[0];
+      const account = accounts.find(a => a.id === accountId);
+      if (account) {
+        const accountEmails = await getEmailsByAccount(accountId);
+        const lastSent = accountEmails.filter(e => e.sentAt).sort((a, b) => new Date(b.sentAt!).getTime() - new Date(a.sentAt!).getTime())[0];
         if (lastSent) {
           await updateEmail({ ...lastSent, respondedAt: new Date().toISOString(), status: 'responded' });
         }
-        if (lead.status === 'contacted' || lead.status === 'new') {
-          await updateLead({ ...lead, status: 'responded' });
-          setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: 'responded' } : l));
+        if (account.lifecycleStage === 'contacted' || account.lifecycleStage === 'prospect') {
+          await updateAccount({ ...account, lifecycleStage: 'engaged', pipelineStage: 'engaged' });
+          setAccounts(prev => prev.map(a => a.id === accountId ? { ...a, lifecycleStage: 'engaged' as const, pipelineStage: 'engaged' as const } : a));
         }
-        await addActivity(createActivity('response_received', `${lead.name} responded!`, leadId, campaignId));
+        await addActivity(createActivity('response_received', `${account.businessName} responded!`, accountId, campaignId));
       }
     }
     setCampaigns(prev => prev.map(c => c.id === campaignId ? updated : c));
@@ -127,19 +127,19 @@ export default function CampaignsPage() {
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, remaining: 0 });
 
-  async function handleGenerateAndCopy(lead: Lead) {
+  async function handleGenerateAndCopy(account: Account) {
     if (!settings) return;
-    const emails = generateEmails(lead, settings);
+    const emails = generateEmails(account, settings);
     if (emails.length > 0) {
       const email = emails[1];
       const ok = await copyToClipboard(`Subject: ${email.subject}\n\n${email.body}`);
-      if (ok) addToast(`Email for ${lead.name} copied!`);
+      if (ok) addToast(`Email for ${account.businessName} copied!`);
     }
   }
 
-  async function handleSendToLead(lead: Lead, campaignId: string) {
-    if (!settings || !lead.email) {
-      addToast(lead.email ? 'Configure SMTP accounts in Settings' : `${lead.name} has no email address`, 'error');
+  async function handleSendToAccount(account: Account, campaignId: string) {
+    if (!settings || !account.contactEmail) {
+      addToast(account.contactEmail ? 'Configure SMTP accounts in Settings' : `${account.businessName} has no email address`, 'error');
       return;
     }
     if (smtpAccounts.length === 0 && (!settings.smtpEmail || !settings.smtpPassword)) {
@@ -152,11 +152,11 @@ export default function CampaignsPage() {
       const verifyRes = await fetch('/api/verify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: lead.email }),
+        body: JSON.stringify({ email: account.contactEmail }),
       });
       const verifyData = await verifyRes.json();
       if (!verifyData.valid) {
-        addToast(`${lead.name}: Invalid email - ${verifyData.reason}`, 'error');
+        addToast(`${account.businessName}: Invalid email - ${verifyData.reason}`, 'error');
         return;
       }
     } catch {
@@ -164,9 +164,9 @@ export default function CampaignsPage() {
     }
 
     // Check unsubscribe list
-    const unsubscribed = await isEmailUnsubscribed(lead.email);
+    const unsubscribed = await isEmailUnsubscribed(account.contactEmail);
     if (unsubscribed) {
-      addToast(`${lead.name} has unsubscribed and cannot receive emails`, 'error');
+      addToast(`${account.businessName} has unsubscribed and cannot receive emails`, 'error');
       return;
     }
 
@@ -180,16 +180,16 @@ export default function CampaignsPage() {
       return;
     }
 
-    setSendingId(lead.id);
+    setSendingId(account.id);
     try {
-      const emails = generateEmails(lead, settings);
+      const emails = generateEmails(account, settings);
       const email = emails[1]; // medium variation
       const trackingId = generateId();
 
       // Append CAN-SPAM unsubscribe footer
       const bodyWithFooter = appendUnsubscribeFooter(
         email.body,
-        lead.email,
+        account.contactEmail,
         settings.unsubscribeMessage,
         settings.businessAddress,
         trackingId
@@ -199,7 +199,7 @@ export default function CampaignsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: lead.email, subject: email.subject, body: bodyWithFooter,
+          to: account.contactEmail, subject: email.subject, body: bodyWithFooter,
           ...(smtpAccounts.length > 0
             ? { smtpAccountId: smtpAccounts[0].id }
             : { smtpEmail: settings.smtpEmail, smtpPassword: settings.smtpPassword }),
@@ -208,11 +208,11 @@ export default function CampaignsPage() {
       });
       const data = await res.json();
       if (data.error) { addToast(data.error, 'error'); return; }
-      await handleEmailStatusChange(campaignId, lead.id, 'sent');
+      await handleEmailStatusChange(campaignId, account.id, 'sent');
       // Save Email record to IndexedDB
       await addEmail({
         id: generateId(),
-        leadId: lead.id,
+        accountId: account.id,
         campaignId,
         subject: email.subject,
         body: bodyWithFooter,
@@ -226,7 +226,7 @@ export default function CampaignsPage() {
       // Increment daily send log
       const todayDate = new Date().toISOString().split('T')[0];
       await incrementSendLog(todayDate);
-      addToast(`Sent to ${lead.name}`);
+      addToast(`Sent to ${account.businessName}`);
     } catch { addToast('Failed to send', 'error'); }
     finally { setSendingId(null); }
   }
@@ -240,15 +240,15 @@ export default function CampaignsPage() {
       addToast('Configure SMTP accounts in Settings first', 'error');
       return;
     }
-    const unsent = campaignLeads.filter(l => l.email && viewingCampaign.emailStatuses[l.id] === 'drafted');
+    const unsent = campaignAccounts.filter(a => a.contactEmail && viewingCampaign.emailStatuses[a.id] === 'drafted');
     if (unsent.length === 0) { addToast('No unsent emails with addresses', 'info'); return; }
-    if (!confirm(`Send emails to ${unsent.length} leads?`)) return;
+    if (!confirm(`Send emails to ${unsent.length} accounts?`)) return;
     setBulkSending(true);
     let sent = 0;
     let skippedUnsubscribed = 0;
     let limitReached = false;
 
-    for (const lead of unsent) {
+    for (const account of unsent) {
       // Check daily send limit before each send (warmup-aware)
       const todayCount = await getTodaySendCount();
       const effectiveLimit = settings.warmupEnabled
@@ -263,9 +263,9 @@ export default function CampaignsPage() {
         break;
       }
 
-      // Check unsubscribe list for each lead
-      if (lead.email) {
-        const unsubscribed = await isEmailUnsubscribed(lead.email);
+      // Check unsubscribe list for each account
+      if (account.contactEmail) {
+        const unsubscribed = await isEmailUnsubscribed(account.contactEmail);
         if (unsubscribed) {
           skippedUnsubscribed++;
           continue;
@@ -273,7 +273,7 @@ export default function CampaignsPage() {
       }
 
       try {
-        const emails = generateEmails(lead, settings);
+        const emails = generateEmails(account, settings);
         // A/B testing: alternate between Group A (variation 0 subject) and Group B (variation 1 subject)
         const abGroup: 'A' | 'B' = sent % 2 === 0 ? 'A' : 'B';
         const email = abGroup === 'A' ? emails[0] : emails[1];
@@ -282,7 +282,7 @@ export default function CampaignsPage() {
         // Append CAN-SPAM unsubscribe footer using the selected variation's body
         const bodyWithFooter = appendUnsubscribeFooter(
           email.body,
-          lead.email!,
+          account.contactEmail!,
           settings.unsubscribeMessage,
           settings.businessAddress,
           trackingId
@@ -292,7 +292,7 @@ export default function CampaignsPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            to: lead.email, subject: email.subject, body: bodyWithFooter,
+            to: account.contactEmail, subject: email.subject, body: bodyWithFooter,
             ...(smtpAccounts.length > 0
               ? { smtpAccountId: smtpAccounts[0].id }
               : { smtpEmail: settings.smtpEmail, smtpPassword: settings.smtpPassword }),
@@ -301,11 +301,11 @@ export default function CampaignsPage() {
         });
         const data = await res.json();
         if (!data.error) {
-          await handleEmailStatusChange(viewingCampaign.id, lead.id, 'sent');
+          await handleEmailStatusChange(viewingCampaign.id, account.id, 'sent');
           // Save Email record with A/B test group
           await addEmail({
             id: generateId(),
-            leadId: lead.id,
+            accountId: account.id,
             campaignId: viewingCampaign.id,
             subject: email.subject,
             body: bodyWithFooter,
@@ -334,8 +334,8 @@ export default function CampaignsPage() {
     addToast(message);
   }
 
-  function toggleLeadSelection(id: string) {
-    setSelectedLeadIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  function toggleAccountSelection(id: string) {
+    setSelectedAccountIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   }
 
   if (loading) return <LoadingSpinner />;
@@ -356,7 +356,7 @@ export default function CampaignsPage() {
       </div>
 
       {campaigns.length === 0 ? (
-        <EmptyState icon="📣" title="No Campaigns Yet" description="Create a campaign to organize your outreach and track emails to multiple leads." actionLabel="Create Campaign" onAction={() => setShowCreate(true)} />
+        <EmptyState icon="📣" title="No Campaigns Yet" description="Create a campaign to organize your outreach and track emails to multiple accounts." actionLabel="Create Campaign" onAction={() => setShowCreate(true)} />
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {campaigns.map(campaign => {
@@ -378,7 +378,7 @@ export default function CampaignsPage() {
                 </div>
                 <div className="mb-3">
                   <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    <span>{counts.total} leads</span><span>{progress}% sent</span>
+                    <span>{counts.total} accounts</span><span>{progress}% sent</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${progress}%` }} />
@@ -412,13 +412,13 @@ export default function CampaignsPage() {
             <input type="text" value={newDesc} onChange={e => setNewDesc(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" placeholder="Brief description..." />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Leads ({selectedLeadIds.size} selected)</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Accounts ({selectedAccountIds.size} selected)</label>
             <div className="max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
-              {leads.filter(l => l.status !== 'closed' && l.status !== 'rejected').map(lead => (
-                <label key={lead.id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer">
-                  <input type="checkbox" checked={selectedLeadIds.has(lead.id)} onChange={() => toggleLeadSelection(lead.id)} className="rounded" />
-                  <span className="text-sm text-gray-900 dark:text-white">{lead.name}</span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{lead.industry} · {lead.leadScore}pts</span>
+              {accounts.filter(a => a.lifecycleStage !== 'won' && a.lifecycleStage !== 'churned').map(account => (
+                <label key={account.id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer">
+                  <input type="checkbox" checked={selectedAccountIds.has(account.id)} onChange={() => toggleAccountSelection(account.id)} className="rounded" />
+                  <span className="text-sm text-gray-900 dark:text-white">{account.businessName}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{account.industry} · {account.leadScore}pts</span>
                 </label>
               ))}
             </div>
@@ -457,7 +457,7 @@ export default function CampaignsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Lead</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Account</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Industry</th>
                   <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Score</th>
                   <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Email Status</th>
@@ -465,31 +465,31 @@ export default function CampaignsPage() {
                 </tr>
               </thead>
               <tbody>
-                {campaignLeads.map(lead => {
-                  const emailStatus = viewingCampaign.emailStatuses[lead.id] || 'drafted';
+                {campaignAccounts.map(account => {
+                  const emailStatus = viewingCampaign.emailStatuses[account.id] || 'drafted';
                   return (
-                    <tr key={lead.id} className="border-b border-gray-100 dark:border-gray-800">
+                    <tr key={account.id} className="border-b border-gray-100 dark:border-gray-800">
                       <td className="px-3 py-2.5">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">{lead.name}</div>
-                        {lead.email && <div className="text-xs text-gray-500">{lead.email}</div>}
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">{account.businessName}</div>
+                        {account.contactEmail && <div className="text-xs text-gray-500">{account.contactEmail}</div>}
                       </td>
-                      <td className="px-3 py-2.5 text-sm text-gray-600 dark:text-gray-400">{lead.industry}</td>
-                      <td className="px-3 py-2.5 text-center text-sm font-bold">{lead.leadScore}</td>
+                      <td className="px-3 py-2.5 text-sm text-gray-600 dark:text-gray-400">{account.industry}</td>
+                      <td className="px-3 py-2.5 text-center text-sm font-bold">{account.leadScore}</td>
                       <td className="px-3 py-2.5 text-center">
-                        <select value={emailStatus} onChange={e => handleEmailStatusChange(viewingCampaign.id, lead.id, e.target.value as EmailStatus)}
+                        <select value={emailStatus} onChange={e => handleEmailStatusChange(viewingCampaign.id, account.id, e.target.value as EmailStatus)}
                           className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white">
                           <option value="drafted">Drafted</option><option value="sent">Sent</option><option value="responded">Responded</option>
                         </select>
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {lead.email && emailStatus === 'drafted' && (
-                            <button onClick={() => handleSendToLead(lead, viewingCampaign.id)} disabled={sendingId === lead.id}
+                          {account.contactEmail && emailStatus === 'drafted' && (
+                            <button onClick={() => handleSendToAccount(account, viewingCampaign.id)} disabled={sendingId === account.id}
                               className="px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded disabled:opacity-50">
-                              {sendingId === lead.id ? 'Sending...' : 'Send'}
+                              {sendingId === account.id ? 'Sending...' : 'Send'}
                             </button>
                           )}
-                          <button onClick={() => handleGenerateAndCopy(lead)} className="px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded">Copy</button>
+                          <button onClick={() => handleGenerateAndCopy(account)} className="px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded">Copy</button>
                         </div>
                       </td>
                     </tr>

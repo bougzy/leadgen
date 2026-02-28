@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { getAllEmails, getAllLeads, getAllInboxReplies, updateInboxReply } from '@/lib/db';
+import { getAllEmails, getAllAccounts, getAllInboxReplies, updateInboxReply } from '@/lib/db';
 import { formatRelativeDate, classifyReply } from '@/lib/utils';
 import type { ReplyCategory } from '@/lib/utils';
-import type { Email, Lead, InboxReply } from '@/types';
+import type { Email, Account, InboxReply } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import Pagination from '@/components/ui/Pagination';
@@ -14,8 +14,8 @@ import Pagination from '@/components/ui/Pagination';
 type FilterType = 'all' | 'opened' | 'clicked' | 'responded' | 'bounced' | 'pending' | 'replies';
 type SortType = 'newest' | 'oldest' | 'most_engaged';
 
-interface EmailWithLead extends Email {
-  lead?: Lead;
+interface EmailWithAccount extends Email {
+  account?: Account;
 }
 
 // ========== Helpers ==========
@@ -117,7 +117,7 @@ const REPLY_CATEGORY_COLORS: Record<ReplyCategory, string> = {
 
 // ========== Email Card Component ==========
 
-function EmailCard({ email, isExpanded, onToggle }: { email: EmailWithLead; isExpanded: boolean; onToggle: () => void }) {
+function EmailCard({ email, isExpanded, onToggle }: { email: EmailWithAccount; isExpanded: boolean; onToggle: () => void }) {
   const bodyPreview = email.body.replace(/<[^>]*>/g, '').slice(0, 100) + (email.body.length > 100 ? '...' : '');
   const [replyText, setReplyText] = useState('');
   const [replyCategory, setReplyCategory] = useState<ReplyCategory | null>(null);
@@ -138,16 +138,16 @@ function EmailCard({ email, isExpanded, onToggle }: { email: EmailWithLead; isEx
         onClick={onToggle}
         className="w-full text-left p-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset rounded-xl"
       >
-        {/* Top row: Lead info + A/B badge */}
+        {/* Top row: Account info + A/B badge */}
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                {email.lead?.name || 'Unknown Lead'}
+                {email.account?.businessName || 'Unknown Account'}
               </h3>
-              {email.lead?.industry && (
+              {email.account?.industry && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                  {email.lead.industry}
+                  {email.account.industry}
                 </span>
               )}
               {email.abTestGroup && (
@@ -341,16 +341,16 @@ function ReplyCard({
           {snippet}
         </p>
 
-        {/* Footer: date, lead link, mark read */}
+        {/* Footer: date, account link, mark read */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
             <span>{formatShortDate(reply.receivedAt)}</span>
-            {reply.matchedLeadId && (
+            {reply.matchedAccountId && (
               <a
-                href={`/leads/${reply.matchedLeadId}`}
+                href={`/leads/${reply.matchedAccountId}`}
                 className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
               >
-                View Lead
+                View Account
               </a>
             )}
           </div>
@@ -372,7 +372,7 @@ function ReplyCard({
 
 export default function InboxPage() {
   const [emails, setEmails] = useState<Email[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [inboxReplies, setInboxReplies] = useState<InboxReply[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('all');
@@ -386,13 +386,13 @@ export default function InboxPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [e, l, r] = await Promise.all([
+        const [e, a, r] = await Promise.all([
           getAllEmails(),
-          getAllLeads(),
+          getAllAccounts(),
           getAllInboxReplies(),
         ]);
         setEmails(e);
-        setLeads(l);
+        setAccounts(a);
         setInboxReplies(r);
       } catch (err) {
         console.error('Failed to load inbox data:', err);
@@ -403,20 +403,20 @@ export default function InboxPage() {
     load();
   }, []);
 
-  // Build lead lookup map
-  const leadMap = useMemo(() => {
-    const map = new Map<string, Lead>();
-    leads.forEach(l => map.set(l.id, l));
+  // Build account lookup map
+  const accountMap = useMemo(() => {
+    const map = new Map<string, Account>();
+    accounts.forEach(a => map.set(a.id, a));
     return map;
-  }, [leads]);
+  }, [accounts]);
 
-  // Enrich emails with lead data
-  const enrichedEmails: EmailWithLead[] = useMemo(() => {
+  // Enrich emails with account data
+  const enrichedEmails: EmailWithAccount[] = useMemo(() => {
     return emails.map(e => ({
       ...e,
-      lead: leadMap.get(e.leadId),
+      account: accountMap.get(e.accountId),
     }));
-  }, [emails, leadMap]);
+  }, [emails, accountMap]);
 
   // Filter
   const filteredEmails = useMemo(() => {
@@ -445,7 +445,7 @@ export default function InboxPage() {
     if (search.trim()) {
       const q = search.toLowerCase().trim();
       result = result.filter(e =>
-        (e.lead?.name || '').toLowerCase().includes(q) ||
+        (e.account?.businessName || '').toLowerCase().includes(q) ||
         e.subject.toLowerCase().includes(q)
       );
     }
@@ -544,7 +544,7 @@ export default function InboxPage() {
         <EmptyState
           icon="📭"
           title="No Emails Yet"
-          description="Your inbox is empty. Generate and send emails to leads to start tracking engagement here."
+          description="Your inbox is empty. Generate and send emails to accounts to start tracking engagement here."
           actionLabel="Generate Emails"
           onAction={() => window.location.href = '/emails'}
         />
@@ -577,7 +577,7 @@ export default function InboxPage() {
           </svg>
           <input
             type="text"
-            placeholder="Search by lead name or subject..."
+            placeholder="Search by account name or subject..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"

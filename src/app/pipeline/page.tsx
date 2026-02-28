@@ -3,11 +3,11 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult } from '@hello-pangea/dnd';
-import { getAllLeads, updateLead, addActivity } from '@/lib/db';
+import { getAllAccounts, updateAccount, addActivity } from '@/lib/db';
 import { getScoreColor, getScoreBgColor } from '@/lib/scoring';
 import { createActivity, formatDate, cn } from '@/lib/utils';
-import type { Lead } from '@/types';
-import { PipelineStage, PIPELINE_STAGES } from '@/types';
+import type { Account, LifecycleStage } from '@/types';
+import { PipelineStage, PIPELINE_STAGES, LIFECYCLE_STAGES } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useToast } from '@/components/ui/Toast';
 
@@ -84,54 +84,54 @@ function formatCurrency(n: number): string {
   }).format(n);
 }
 
-// Stage-to-status mapping
-const STAGE_TO_STATUS: Record<PipelineStage, Lead['status']> = {
-  prospect: 'new',
+// Stage-to-lifecycle mapping
+const STAGE_TO_LIFECYCLE: Record<PipelineStage, LifecycleStage> = {
+  prospect: 'prospect',
   outreach: 'contacted',
-  engaged: 'responded',
+  engaged: 'engaged',
   meeting: 'qualified',
   proposal: 'qualified',
-  won: 'closed',
-  lost: 'rejected',
+  won: 'won',
+  lost: 'churned',
 };
 
 // ========================= COMPONENT ========================================
 export default function PipelinePage() {
   const { addToast } = useToast();
 
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [movingId, setMovingId] = useState<string | null>(null); // lead currently being moved (shows stage picker)
+  const [movingId, setMovingId] = useState<string | null>(null); // account currently being moved (shows stage picker)
   const [searchQuery, setSearchQuery] = useState('');
 
   // ---- data loading --------------------------------------------------------
-  const loadLeads = useCallback(async () => {
+  const loadAccounts = useCallback(async () => {
     try {
-      const data = await getAllLeads();
-      setLeads(data);
+      const data = await getAllAccounts();
+      setAccounts(data);
     } catch (err) {
-      console.error('Failed to load leads:', err);
-      addToast('Failed to load leads', 'error');
+      console.error('Failed to load accounts:', err);
+      addToast('Failed to load accounts', 'error');
     } finally {
       setLoading(false);
     }
   }, [addToast]);
 
   useEffect(() => {
-    loadLeads();
-  }, [loadLeads]);
+    loadAccounts();
+  }, [loadAccounts]);
 
-  // ---- filter leads by search query ----------------------------------------
-  const filteredLeads = useMemo(() => {
-    if (!searchQuery.trim()) return leads;
+  // ---- filter accounts by search query --------------------------------------
+  const filteredAccounts = useMemo(() => {
+    if (!searchQuery.trim()) return accounts;
     const q = searchQuery.toLowerCase().trim();
-    return leads.filter((lead) => lead.name.toLowerCase().includes(q));
-  }, [leads, searchQuery]);
+    return accounts.filter((account) => account.businessName.toLowerCase().includes(q));
+  }, [accounts, searchQuery]);
 
   // ---- grouped by stage ----------------------------------------------------
   const grouped = useMemo(() => {
-    const map: Record<PipelineStage, Lead[]> = {
+    const map: Record<PipelineStage, Account[]> = {
       prospect: [],
       outreach: [],
       engaged: [],
@@ -140,12 +140,12 @@ export default function PipelinePage() {
       won: [],
       lost: [],
     };
-    for (const lead of filteredLeads) {
-      const stage = lead.pipelineStage ?? 'prospect';
+    for (const account of filteredAccounts) {
+      const stage = account.pipelineStage ?? 'prospect';
       if (map[stage]) {
-        map[stage].push(lead);
+        map[stage].push(account);
       } else {
-        map.prospect.push(lead);
+        map.prospect.push(account);
       }
     }
     // Sort each column by lead score descending
@@ -153,11 +153,11 @@ export default function PipelinePage() {
       map[key].sort((a, b) => b.leadScore - a.leadScore);
     }
     return map;
-  }, [filteredLeads]);
+  }, [filteredAccounts]);
 
-  // ---- stats (always computed from all leads, not filtered) ----------------
+  // ---- stats (always computed from all accounts, not filtered) -------------
   const stats = useMemo(() => {
-    const allGrouped: Record<PipelineStage, Lead[]> = {
+    const allGrouped: Record<PipelineStage, Account[]> = {
       prospect: [],
       outreach: [],
       engaged: [],
@@ -166,53 +166,53 @@ export default function PipelinePage() {
       won: [],
       lost: [],
     };
-    for (const lead of leads) {
-      const stage = lead.pipelineStage ?? 'prospect';
+    for (const account of accounts) {
+      const stage = account.pipelineStage ?? 'prospect';
       if (allGrouped[stage]) {
-        allGrouped[stage].push(lead);
+        allGrouped[stage].push(account);
       } else {
-        allGrouped.prospect.push(lead);
+        allGrouped.prospect.push(account);
       }
     }
-    const wonLeads = allGrouped.won;
-    const totalDealValue = wonLeads.reduce((sum, l) => sum + (l.dealValue ?? 0), 0);
-    const totalLeads = leads.length;
-    const wonCount = wonLeads.length;
+    const wonAccounts = allGrouped.won;
+    const totalDealValue = wonAccounts.reduce((sum, a) => sum + (a.dealValue ?? 0), 0);
+    const totalAccounts = accounts.length;
+    const wonCount = wonAccounts.length;
     const lostCount = allGrouped.lost.length;
     const closedCount = wonCount + lostCount;
     const conversionRate = closedCount > 0 ? (wonCount / closedCount) * 100 : 0;
-    const activeDeals = totalLeads - wonCount - lostCount;
-    return { totalDealValue, conversionRate, activeDeals, totalLeads, wonCount };
-  }, [leads]);
+    const activeDeals = totalAccounts - wonCount - lostCount;
+    return { totalDealValue, conversionRate, activeDeals, totalAccounts, wonCount };
+  }, [accounts]);
 
-  // ---- move lead to a new stage --------------------------------------------
-  const moveLeadToStage = useCallback(
-    async (lead: Lead, newStage: PipelineStage) => {
-      if (lead.pipelineStage === newStage) return;
-      const oldStage = lead.pipelineStage ?? 'prospect';
-      const newStatus = STAGE_TO_STATUS[newStage];
-      const updatedLead: Lead = { ...lead, pipelineStage: newStage, status: newStatus };
+  // ---- move account to a new stage ------------------------------------------
+  const moveAccountToStage = useCallback(
+    async (account: Account, newStage: PipelineStage) => {
+      if (account.pipelineStage === newStage) return;
+      const oldStage = account.pipelineStage ?? 'prospect';
+      const newLifecycle = STAGE_TO_LIFECYCLE[newStage];
+      const updatedAccount: Account = { ...account, pipelineStage: newStage, lifecycleStage: newLifecycle };
       // Optimistic update
-      setLeads((prev) =>
-        prev.map((l) => (l.id === lead.id ? updatedLead : l))
+      setAccounts((prev) =>
+        prev.map((a) => (a.id === account.id ? updatedAccount : a))
       );
       setMovingId(null);
       try {
-        await updateLead(updatedLead);
+        await updateAccount(updatedAccount);
         const activity = createActivity(
           'lead_status_changed',
-          `Moved "${lead.name}" from ${stageLabel(oldStage)} to ${stageLabel(newStage)}`,
-          lead.id
+          `Moved "${account.businessName}" from ${stageLabel(oldStage)} to ${stageLabel(newStage)}`,
+          account.id
         );
         await addActivity(activity);
         addToast(`Moved to ${stageLabel(newStage)}`);
       } catch (err) {
-        console.error('Failed to move lead:', err);
+        console.error('Failed to move account:', err);
         // Revert
-        setLeads((prev) =>
-          prev.map((l) => (l.id === lead.id ? lead : l))
+        setAccounts((prev) =>
+          prev.map((a) => (a.id === account.id ? account : a))
         );
-        addToast('Failed to move lead', 'error');
+        addToast('Failed to move account', 'error');
       }
     },
     [addToast]
@@ -240,13 +240,13 @@ export default function PipelinePage() {
       // If same column, just reordering -- we don't persist order, so ignore
       if (newStage === oldStage) return;
 
-      // Find the lead
-      const lead = leads.find((l) => l.id === draggableId);
-      if (!lead) return;
+      // Find the account
+      const account = accounts.find((a) => a.id === draggableId);
+      if (!account) return;
 
-      moveLeadToStage(lead, newStage);
+      moveAccountToStage(account, newStage);
     },
-    [leads, moveLeadToStage]
+    [accounts, moveAccountToStage]
   );
 
   // ---- render ---------------------------------------------------------------
@@ -291,7 +291,7 @@ export default function PipelinePage() {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search leads by name..."
+          placeholder="Search accounts by name..."
           className="block w-full md:w-80 pl-10 pr-10 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
         />
         {searchQuery && (
@@ -340,8 +340,8 @@ export default function PipelinePage() {
           }
         />
         <StatCard
-          label="Total Leads"
-          value={String(stats.totalLeads)}
+          label="Total Accounts"
+          value={String(stats.totalAccounts)}
           accent="text-gray-600 dark:text-gray-400"
           icon={
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -380,14 +380,14 @@ export default function PipelinePage() {
                   <div className="p-2 space-y-2 max-h-[calc(100vh-320px)] overflow-y-auto min-h-[60px]">
                     {grouped[stage].length === 0 && !snapshot.isDraggingOver && (
                       <p className="text-xs text-center text-gray-400 dark:text-gray-500 py-8">
-                        No leads in this stage
+                        No accounts in this stage
                       </p>
                     )}
-                    {grouped[stage].map((lead, index) => (
+                    {grouped[stage].map((account, index) => (
                       <Draggable
-                        draggableId={lead.id}
+                        draggableId={account.id}
                         index={index}
-                        key={lead.id}
+                        key={account.id}
                       >
                         {(dragProvided, dragSnapshot) => (
                           <div
@@ -401,27 +401,27 @@ export default function PipelinePage() {
                                 'scale-[1.03] shadow-xl opacity-90 rotate-[1deg]'
                             )}
                           >
-                            <LeadCard
-                              lead={lead}
-                              expanded={expandedId === lead.id}
-                              showingStagePicker={movingId === lead.id}
+                            <AccountCard
+                              account={account}
+                              expanded={expandedId === account.id}
+                              showingStagePicker={movingId === account.id}
                               isDragging={dragSnapshot.isDragging}
                               onToggleExpand={() =>
-                                setExpandedId((prev) => (prev === lead.id ? null : lead.id))
+                                setExpandedId((prev) => (prev === account.id ? null : account.id))
                               }
                               onToggleStagePicker={() =>
-                                setMovingId((prev) => (prev === lead.id ? null : lead.id))
+                                setMovingId((prev) => (prev === account.id ? null : account.id))
                               }
                               onMoveForward={() => {
-                                const ns = nextStage(lead.pipelineStage ?? 'prospect');
-                                if (ns) moveLeadToStage(lead, ns);
+                                const ns = nextStage(account.pipelineStage ?? 'prospect');
+                                if (ns) moveAccountToStage(account, ns);
                               }}
                               onMoveBackward={() => {
-                                const ps = prevStage(lead.pipelineStage ?? 'prospect');
-                                if (ps) moveLeadToStage(lead, ps);
+                                const ps = prevStage(account.pipelineStage ?? 'prospect');
+                                if (ps) moveAccountToStage(account, ps);
                               }}
-                              onMoveToStage={(s) => moveLeadToStage(lead, s)}
-                              currentStage={lead.pipelineStage ?? 'prospect'}
+                              onMoveToStage={(s) => moveAccountToStage(account, s)}
+                              currentStage={account.pipelineStage ?? 'prospect'}
                             />
                           </div>
                         )}
@@ -470,10 +470,10 @@ function StatCard({
 }
 
 // ---------------------------------------------------------------------------
-// Lead Card
+// Account Card
 // ---------------------------------------------------------------------------
-function LeadCard({
-  lead,
+function AccountCard({
+  account,
   expanded,
   showingStagePicker,
   isDragging,
@@ -484,7 +484,7 @@ function LeadCard({
   onMoveToStage,
   currentStage,
 }: {
-  lead: Lead;
+  account: Account;
   expanded: boolean;
   showingStagePicker: boolean;
   isDragging: boolean;
@@ -514,44 +514,44 @@ function LeadCard({
         {/* Row 1: name + score */}
         <div className="flex items-start justify-between gap-2">
           <span className="text-sm font-semibold text-gray-900 dark:text-white leading-tight truncate">
-            {lead.name}
+            {account.businessName}
           </span>
           <span
             className={cn(
               'flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded',
-              getScoreBgColor(lead.leadScore),
-              getScoreColor(lead.leadScore)
+              getScoreBgColor(account.leadScore),
+              getScoreColor(account.leadScore)
             )}
           >
-            {lead.leadScore}
+            {account.leadScore}
           </span>
         </div>
 
         {/* Row 2: industry */}
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-          {lead.industry}
-          {lead.location ? ` \u2022 ${lead.location}` : ''}
+          {account.industry}
+          {account.location ? ` \u2022 ${account.location}` : ''}
         </p>
 
         {/* Row 3: icons + deal value */}
         <div className="flex items-center gap-2 mt-1.5">
-          {lead.email && (
-            <span title={lead.email} className="text-gray-400 dark:text-gray-500">
+          {account.contactEmail && (
+            <span title={account.contactEmail} className="text-gray-400 dark:text-gray-500">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             </span>
           )}
-          {lead.phone && (
-            <span title={lead.phone} className="text-gray-400 dark:text-gray-500">
+          {account.contactPhone && (
+            <span title={account.contactPhone} className="text-gray-400 dark:text-gray-500">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
               </svg>
             </span>
           )}
-          {lead.dealValue != null && lead.dealValue > 0 && (
+          {account.dealValue != null && account.dealValue > 0 && (
             <span className="ml-auto text-xs font-semibold text-green-600 dark:text-green-400">
-              {formatCurrency(lead.dealValue)}
+              {formatCurrency(account.dealValue)}
             </span>
           )}
         </div>
@@ -659,67 +659,67 @@ function LeadCard({
       {expanded && !isDragging && (
         <div className="border-t border-gray-100 dark:border-gray-700 px-3 py-3 text-xs space-y-2 bg-gray-50/50 dark:bg-gray-900/30">
           {/* Contact info */}
-          {lead.contactName && (
-            <DetailRow label="Contact" value={lead.contactName} />
+          {account.contactName && (
+            <DetailRow label="Contact" value={account.contactName} />
           )}
-          {lead.email && (
+          {account.contactEmail && (
             <DetailRow
               label="Email"
               value={
                 <a
-                  href={`mailto:${lead.email}`}
+                  href={`mailto:${account.contactEmail}`}
                   className="text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  {lead.email}
+                  {account.contactEmail}
                 </a>
               }
             />
           )}
-          {lead.phone && (
+          {account.contactPhone && (
             <DetailRow
               label="Phone"
               value={
                 <a
-                  href={`tel:${lead.phone}`}
+                  href={`tel:${account.contactPhone}`}
                   className="text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  {lead.phone}
+                  {account.contactPhone}
                 </a>
               }
             />
           )}
-          {lead.website && (
+          {account.website && (
             <DetailRow
               label="Website"
               value={
                 <a
-                  href={lead.website}
+                  href={account.website}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 dark:text-blue-400 hover:underline truncate block max-w-[180px]"
                 >
-                  {lead.website.replace(/^https?:\/\//, '')}
+                  {account.website.replace(/^https?:\/\//, '')}
                 </a>
               }
             />
           )}
-          {lead.dealValue != null && lead.dealValue > 0 && (
+          {account.dealValue != null && account.dealValue > 0 && (
             <DetailRow
               label="Deal Value"
               value={
                 <span className="font-semibold text-green-600 dark:text-green-400">
-                  {formatCurrency(lead.dealValue)}
+                  {formatCurrency(account.dealValue)}
                 </span>
               }
             />
           )}
 
           {/* Tags */}
-          {lead.tags.length > 0 && (
+          {account.tags.length > 0 && (
             <div>
               <span className="text-gray-400 dark:text-gray-500 font-medium">Tags</span>
               <div className="flex flex-wrap gap-1 mt-1">
-                {lead.tags.map((tag) => (
+                {account.tags.map((tag) => (
                   <span
                     key={tag}
                     className="inline-block px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-[10px]"
@@ -732,39 +732,39 @@ function LeadCard({
           )}
 
           {/* Notes */}
-          {lead.notes && (
+          {account.notes && (
             <div>
               <span className="text-gray-400 dark:text-gray-500 font-medium">Notes</span>
               <p className="text-gray-600 dark:text-gray-300 mt-0.5 whitespace-pre-wrap">
-                {lead.notes}
+                {account.notes}
               </p>
             </div>
           )}
 
           {/* Last contacted */}
-          {lead.lastContacted && (
+          {account.lastContacted && (
             <DetailRow
               label="Last Contacted"
-              value={formatDate(lead.lastContacted)}
+              value={formatDate(account.lastContacted)}
             />
           )}
 
           {/* Date added */}
-          <DetailRow label="Added" value={formatDate(lead.dateAdded)} />
+          <DetailRow label="Added" value={formatDate(account.dateAdded)} />
 
-          {/* Status */}
-          <DetailRow label="Status" value={lead.status} />
+          {/* Lifecycle Stage */}
+          <DetailRow label="Stage" value={LIFECYCLE_STAGES.find(s => s.value === account.lifecycleStage)?.label ?? account.lifecycleStage} />
 
           {/* Quick actions */}
           <div className="flex gap-2 pt-2 border-t border-gray-100 dark:border-gray-700 mt-2">
             <a
-              href={`/emails?leadId=${lead.id}`}
+              href={`/emails?accountId=${account.id}`}
               className="flex-1 text-center px-2 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 transition-colors"
             >
               Generate Email
             </a>
             <a
-              href={`/leads/${lead.id}`}
+              href={`/leads/${account.id}`}
               className="flex-1 text-center px-2 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               View Details

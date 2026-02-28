@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { getSettings, saveSettings, exportAllData, importAllData, clearAllData, addLead, addActivity, getAllSmtpAccounts } from '@/lib/db';
+import { getSettings, saveSettings, exportAllData, importAllData, clearAllData, addAccount, addActivity, getAllSmtpAccounts } from '@/lib/db';
 import { generateSampleLeads, createActivity } from '@/lib/utils';
 import type { UserSettings, SmtpAccount, SmtpProvider } from '@/types';
 import { DEFAULT_SETTINGS, SMTP_PRESETS } from '@/types';
@@ -269,9 +269,9 @@ export default function SettingsPage() {
   async function handleLoadSample() {
     try {
       const samples = generateSampleLeads();
-      for (const lead of samples) await addLead(lead);
-      await addActivity(createActivity('lead_added', `Loaded ${samples.length} sample leads`));
-      addToast(`Loaded ${samples.length} sample leads`);
+      for (const account of samples) await addAccount(account);
+      await addActivity(createActivity('lead_added', `Loaded ${samples.length} sample accounts`));
+      addToast(`Loaded ${samples.length} sample accounts`);
     } catch { addToast('Failed to load sample data', 'error'); }
   }
 

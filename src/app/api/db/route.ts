@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db-server';
+import { accountSchema } from '@/lib/schemas';
+
+// Validate account payloads for write operations (best-effort — logs but doesn't block)
+function validateAccount(data: unknown): { valid: boolean; error?: string } {
+  const result = accountSchema.safeParse(data);
+  if (!result.success) {
+    const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+    console.warn(`[API/db] Account validation warning: ${issues}`);
+    return { valid: false, error: issues };
+  }
+  return { valid: true };
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,18 +23,56 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing or invalid action' }, { status: 400 });
     }
 
+    // Input size guard — reject absurdly large payloads
+    const bodyStr = JSON.stringify(body);
+    if (bodyStr.length > 5_000_000) {
+      return NextResponse.json({ error: 'Payload too large' }, { status: 413 });
+    }
+
+    // Validate write actions
+    if (action === 'addAccount' || action === 'updateAccount') {
+      validateAccount(params?.account);
+    }
+
     // Dispatch to the right function
     let result: unknown;
 
     switch (action) {
-      // Leads
-      case 'getAllLeads': result = await db.getAllLeads(); break;
-      case 'getLead': result = await db.getLead(params.id); break;
-      case 'addLead': await db.addLead(params.lead); result = { ok: true }; break;
-      case 'updateLead': await db.updateLead(params.lead); result = { ok: true }; break;
-      case 'deleteLead': await db.deleteLead(params.id); result = { ok: true }; break;
-      case 'deleteLeads': await db.deleteLeads(params.ids); result = { ok: true }; break;
-      case 'findDuplicateLead': result = await db.findDuplicateLead(params.name, params.address); break;
+      // Accounts (unified — replaces Leads + ClientSites)
+      case 'getAllAccounts':
+      case 'getAllLeads':
+      case 'getAllClientSites':
+        result = await db.getAllAccounts(); break;
+      case 'getAccount':
+      case 'getLead':
+      case 'getClientSite':
+        result = await db.getAccount(params.id); break;
+      case 'addAccount':
+        await db.addAccount(params.account); result = { ok: true }; break;
+      case 'addLead':
+        await db.addAccount(params.lead || params.account); result = { ok: true }; break;
+      case 'addClientSite':
+        await db.addAccount(params.site || params.account); result = { ok: true }; break;
+      case 'updateAccount':
+        await db.updateAccount(params.account); result = { ok: true }; break;
+      case 'updateLead':
+        await db.updateAccount(params.lead || params.account); result = { ok: true }; break;
+      case 'updateClientSite':
+        await db.updateAccount(params.site || params.account); result = { ok: true }; break;
+      case 'deleteAccount':
+      case 'deleteLead':
+      case 'deleteClientSite':
+        await db.deleteAccount(params.id); result = { ok: true }; break;
+      case 'deleteAccounts':
+      case 'deleteLeads':
+        await db.deleteAccounts(params.ids); result = { ok: true }; break;
+      case 'softDeleteAccount':
+        await db.softDeleteAccount(params.id); result = { ok: true }; break;
+      case 'findDuplicateAccount':
+      case 'findDuplicateLead':
+        result = await db.findDuplicateAccount(params.name, params.address); break;
+      case 'getAccountsByStages':
+        result = await db.getAccountsByStages(params.stages); break;
 
       // Campaigns
       case 'getAllCampaigns': result = await db.getAllCampaigns(); break;
@@ -33,7 +83,10 @@ export async function POST(req: NextRequest) {
 
       // Emails
       case 'getAllEmails': result = await db.getAllEmails(); break;
-      case 'getEmailsByLead': result = await db.getEmailsByLead(params.leadId); break;
+      case 'getEmailsByAccount':
+        result = await db.getEmailsByAccount(params.accountId); break;
+      case 'getEmailsByLead':
+        result = await db.getEmailsByAccount(params.leadId || params.accountId); break;
       case 'getEmailsByCampaign': result = await db.getEmailsByCampaign(params.campaignId); break;
       case 'addEmail': await db.addEmail(params.email); result = { ok: true }; break;
       case 'updateEmail': await db.updateEmail(params.email); result = { ok: true }; break;
@@ -93,7 +146,9 @@ export async function POST(req: NextRequest) {
       case 'updateInboxReply': await db.updateInboxReply(params.reply); result = { ok: true }; break;
 
       // Paginated Queries
-      case 'getLeadsPaginated': result = await db.getLeadsPaginated(params.page, params.pageSize, params.filters, params.sort); break;
+      case 'getAccountsPaginated':
+      case 'getLeadsPaginated':
+        result = await db.getAccountsPaginated(params.page, params.pageSize, params.filters, params.sort); break;
       case 'getEmailsPaginated': result = await db.getEmailsPaginated(params.page, params.pageSize, params.filters); break;
       case 'getScheduledEmailsPaginated': result = await db.getScheduledEmailsPaginated(params.page, params.pageSize, params.filters); break;
       case 'getInboxRepliesPaginated': result = await db.getInboxRepliesPaginated(params.page, params.pageSize, params.filters); break;
@@ -109,6 +164,135 @@ export async function POST(req: NextRequest) {
       case 'clearAllData': await db.clearAllData(); result = { ok: true }; break;
       case 'exportAllData': result = await db.exportAllData(); break;
       case 'importAllData': await db.importAllData(params.data); result = { ok: true }; break;
+
+      // GBP Audits
+      case 'getGbpAuditsByAccount':
+      case 'getGbpAuditsByClient':
+        result = await db.getGbpAuditsByAccount(params.accountId || params.clientSiteId); break;
+      case 'getLatestGbpAudit':
+        result = await db.getLatestGbpAudit(params.accountId || params.clientSiteId); break;
+      case 'addGbpAudit': await db.addGbpAudit(params.audit); result = { ok: true }; break;
+      case 'updateGbpAudit': await db.updateGbpAudit(params.audit); result = { ok: true }; break;
+      case 'deleteGbpAudit': await db.deleteGbpAudit(params.id); result = { ok: true }; break;
+
+      // GBP Posts
+      case 'getGbpPostsByAccount':
+      case 'getGbpPostsByClient':
+        result = await db.getGbpPostsByAccount(params.accountId || params.clientSiteId); break;
+      case 'addGbpPost': await db.addGbpPost(params.post); result = { ok: true }; break;
+      case 'updateGbpPost': await db.updateGbpPost(params.post); result = { ok: true }; break;
+      case 'deleteGbpPost': await db.deleteGbpPost(params.id); result = { ok: true }; break;
+      case 'getGbpPostsByDateRange':
+        result = await db.getGbpPostsByDateRange(params.accountId || params.clientSiteId, params.startDate, params.endDate); break;
+
+      // GBP Post Templates
+      case 'getAllGbpPostTemplates': result = await db.getAllGbpPostTemplates(); break;
+      case 'addGbpPostTemplate': await db.addGbpPostTemplate(params.template); result = { ok: true }; break;
+      case 'updateGbpPostTemplate': await db.updateGbpPostTemplate(params.template); result = { ok: true }; break;
+      case 'deleteGbpPostTemplate': await db.deleteGbpPostTemplate(params.id); result = { ok: true }; break;
+
+      // Review Requests
+      case 'getReviewRequestsByAccount':
+      case 'getReviewRequestsByClient':
+        result = await db.getReviewRequestsByAccount(params.accountId || params.clientSiteId); break;
+      case 'addReviewRequest': await db.addReviewRequest(params.request); result = { ok: true }; break;
+      case 'updateReviewRequest': await db.updateReviewRequest(params.request); result = { ok: true }; break;
+      case 'deleteReviewRequest': await db.deleteReviewRequest(params.id); result = { ok: true }; break;
+      case 'getPendingReviewRequests': result = await db.getPendingReviewRequests(); break;
+
+      // Client Reviews
+      case 'getClientReviewsByAccount':
+      case 'getClientReviewsByClient':
+        result = await db.getClientReviewsByAccount(params.accountId || params.clientSiteId); break;
+      case 'addClientReview': await db.addClientReview(params.review); result = { ok: true }; break;
+      case 'updateClientReview': await db.updateClientReview(params.review); result = { ok: true }; break;
+      case 'deleteClientReview': await db.deleteClientReview(params.id); result = { ok: true }; break;
+      case 'getNegativeReviewsByAccount':
+      case 'getNegativeReviewsByClient':
+        result = await db.getNegativeReviewsByAccount(params.accountId || params.clientSiteId); break;
+
+      // Rank Keywords
+      case 'getRankKeywordsByAccount':
+      case 'getRankKeywordsByClient':
+        result = await db.getRankKeywordsByAccount(params.accountId || params.clientSiteId); break;
+      case 'addRankKeyword': await db.addRankKeyword(params.keyword); result = { ok: true }; break;
+      case 'updateRankKeyword': await db.updateRankKeyword(params.keyword); result = { ok: true }; break;
+      case 'deleteRankKeyword': await db.deleteRankKeyword(params.id); result = { ok: true }; break;
+
+      // Competitors
+      case 'getCompetitorsByAccount':
+      case 'getCompetitorsByClient':
+        result = await db.getCompetitorsByAccount(params.accountId || params.clientSiteId); break;
+      case 'addCompetitor': await db.addCompetitor(params.competitor); result = { ok: true }; break;
+      case 'updateCompetitor': await db.updateCompetitor(params.competitor); result = { ok: true }; break;
+      case 'deleteCompetitor': await db.deleteCompetitor(params.id); result = { ok: true }; break;
+
+      // Citations
+      case 'getCitationsByAccount':
+      case 'getCitationsByClient':
+        result = await db.getCitationsByAccount(params.accountId || params.clientSiteId); break;
+      case 'addCitation': await db.addCitation(params.citation); result = { ok: true }; break;
+      case 'updateCitation': await db.updateCitation(params.citation); result = { ok: true }; break;
+      case 'deleteCitation': await db.deleteCitation(params.id); result = { ok: true }; break;
+
+      // Social Content
+      case 'getSocialContentsByAccount':
+      case 'getSocialContentsByClient':
+        result = await db.getSocialContentsByAccount(params.accountId || params.clientSiteId); break;
+      case 'addSocialContent': await db.addSocialContent(params.content); result = { ok: true }; break;
+      case 'updateSocialContent': await db.updateSocialContent(params.content); result = { ok: true }; break;
+      case 'deleteSocialContent': await db.deleteSocialContent(params.id); result = { ok: true }; break;
+      case 'getSocialContentsByDateRange':
+        result = await db.getSocialContentsByDateRange(params.accountId || params.clientSiteId, params.startDate, params.endDate); break;
+
+      // Social Content Templates
+      case 'getAllSocialContentTemplates': result = await db.getAllSocialContentTemplates(); break;
+      case 'addSocialContentTemplate': await db.addSocialContentTemplate(params.template); result = { ok: true }; break;
+      case 'updateSocialContentTemplate': await db.updateSocialContentTemplate(params.template); result = { ok: true }; break;
+      case 'deleteSocialContentTemplate': await db.deleteSocialContentTemplate(params.id); result = { ok: true }; break;
+
+      // Referral Records
+      case 'getReferralsByAccount':
+      case 'getReferralsByClient':
+        result = await db.getReferralsByAccount(params.accountId || params.clientSiteId); break;
+      case 'addReferralRecord': await db.addReferralRecord(params.record); result = { ok: true }; break;
+      case 'updateReferralRecord': await db.updateReferralRecord(params.record); result = { ok: true }; break;
+      case 'deleteReferralRecord': await db.deleteReferralRecord(params.id); result = { ok: true }; break;
+      case 'getReferralByCode': result = await db.getReferralByCode(params.referralCode); break;
+
+      // Retention Reminders
+      case 'getRetentionRemindersByAccount':
+      case 'getRetentionRemindersByClient':
+        result = await db.getRetentionRemindersByAccount(params.accountId || params.clientSiteId); break;
+      case 'addRetentionReminder': await db.addRetentionReminder(params.reminder); result = { ok: true }; break;
+      case 'updateRetentionReminder': await db.updateRetentionReminder(params.reminder); result = { ok: true }; break;
+      case 'deleteRetentionReminder': await db.deleteRetentionReminder(params.id); result = { ok: true }; break;
+      case 'getPendingRetentionReminders': result = await db.getPendingRetentionReminders(); break;
+
+      // Client Customers
+      case 'getClientCustomersByAccount':
+      case 'getClientCustomersByClient':
+        result = await db.getClientCustomersByAccount(params.accountId || params.clientSiteId); break;
+      case 'getClientCustomer': result = await db.getClientCustomer(params.id); break;
+      case 'addClientCustomer': await db.addClientCustomer(params.customer); result = { ok: true }; break;
+      case 'updateClientCustomer': await db.updateClientCustomer(params.customer); result = { ok: true }; break;
+      case 'deleteClientCustomer': await db.deleteClientCustomer(params.id); result = { ok: true }; break;
+
+      // Client Reports
+      case 'getClientReportsByAccount':
+      case 'getClientReportsByClient':
+        result = await db.getClientReportsByAccount(params.accountId || params.clientSiteId); break;
+      case 'getClientReport':
+        result = await db.getClientReport(params.accountId || params.clientSiteId, params.month); break;
+      case 'addClientReport': await db.addClientReport(params.report); result = { ok: true }; break;
+      case 'updateClientReport': await db.updateClientReport(params.report); result = { ok: true }; break;
+      case 'deleteClientReport': await db.deleteClientReport(params.id); result = { ok: true }; break;
+
+      // Automation Tasks
+      case 'getDueTasks': result = await db.getDueTasks(params.limit || 10); break;
+      case 'addAutomationTask': await db.addAutomationTask(params.task); result = { ok: true }; break;
+      case 'updateAutomationTask': await db.updateAutomationTask(params.task); result = { ok: true }; break;
+      case 'getAutomationTasksByStatus': result = await db.getAutomationTasksByStatus(params.status); break;
 
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });

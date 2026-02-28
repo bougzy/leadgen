@@ -1,58 +1,61 @@
 'use client';
 
 import { useState } from 'react';
-import type { Lead } from '@/types';
-import { INDUSTRIES, TAGS, PIPELINE_STAGES } from '@/types';
+import type { Account, LifecycleStage } from '@/types';
+import { INDUSTRIES, TAGS, PIPELINE_STAGES, LIFECYCLE_STAGES } from '@/types';
 import type { PipelineStage } from '@/types';
 import { generateId } from '@/lib/utils';
 import { calculateLeadScore } from '@/lib/scoring';
 
 interface LeadFormProps {
-  lead?: Lead;
-  onSave: (lead: Lead) => void;
+  lead?: Account;
+  onSave: (account: Account) => void;
   onCancel: () => void;
 }
 
 export default function LeadForm({ lead, onSave, onCancel }: LeadFormProps) {
   const [form, setForm] = useState({
-    name: lead?.name || '',
+    businessName: lead?.businessName || '',
     contactName: lead?.contactName || '',
     industry: lead?.industry || 'Restaurant',
     location: lead?.location || '',
     website: lead?.website || '',
-    email: lead?.email || '',
-    phone: lead?.phone || '',
+    contactEmail: lead?.contactEmail || '',
+    contactPhone: lead?.contactPhone || '',
     tags: lead?.tags || [] as string[],
     notes: lead?.notes || '',
-    status: lead?.status || 'new' as Lead['status'],
+    lifecycleStage: lead?.lifecycleStage || 'prospect' as LifecycleStage,
     pipelineStage: lead?.pipelineStage || 'prospect' as PipelineStage,
     dealValue: lead?.dealValue ?? ('' as number | ''),
   });
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const newLead: Lead = {
+    const account: Account = {
       id: lead?.id || generateId(),
-      name: form.name,
+      businessName: form.businessName,
       contactName: form.contactName || undefined,
       industry: form.industry,
       location: form.location,
       website: form.website || undefined,
-      email: form.email || undefined,
-      phone: form.phone || undefined,
+      contactEmail: form.contactEmail || undefined,
+      contactPhone: form.contactPhone || undefined,
       tags: form.tags,
       leadScore: 0,
       notes: form.notes,
-      status: form.status as Lead['status'],
+      lifecycleStage: form.lifecycleStage,
       pipelineStage: form.pipelineStage,
+      services: lead?.services || [],
+      serviceArea: lead?.serviceArea || [],
       dealValue: form.dealValue !== '' ? Number(form.dealValue) : undefined,
       dateAdded: lead?.dateAdded || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       lastContacted: lead?.lastContacted,
       source: lead?.source,
       unsubscribed: lead?.unsubscribed,
     };
-    newLead.leadScore = calculateLeadScore(newLead);
-    onSave(newLead);
+    account.leadScore = calculateLeadScore(account);
+    onSave(account);
   }
 
   function toggleTag(tag: string) {
@@ -72,8 +75,8 @@ export default function LeadForm({ lead, onSave, onCancel }: LeadFormProps) {
           <input
             type="text"
             required
-            value={form.name}
-            onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+            value={form.businessName}
+            onChange={e => setForm(prev => ({ ...prev, businessName: e.target.value }))}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="e.g., Joe's Pizza"
           />
@@ -132,8 +135,8 @@ export default function LeadForm({ lead, onSave, onCancel }: LeadFormProps) {
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
           <input
             type="email"
-            value={form.email}
-            onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
+            value={form.contactEmail}
+            onChange={e => setForm(prev => ({ ...prev, contactEmail: e.target.value }))}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="email@example.com"
           />
@@ -142,8 +145,8 @@ export default function LeadForm({ lead, onSave, onCancel }: LeadFormProps) {
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
           <input
             type="tel"
-            value={form.phone}
-            onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))}
+            value={form.contactPhone}
+            onChange={e => setForm(prev => ({ ...prev, contactPhone: e.target.value }))}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="305-555-0123"
           />
@@ -152,18 +155,15 @@ export default function LeadForm({ lead, onSave, onCancel }: LeadFormProps) {
 
       {lead && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Lifecycle Stage</label>
           <select
-            value={form.status}
-            onChange={e => setForm(prev => ({ ...prev, status: e.target.value as Lead['status'] }))}
+            value={form.lifecycleStage}
+            onChange={e => setForm(prev => ({ ...prev, lifecycleStage: e.target.value as LifecycleStage }))}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <option value="new">New</option>
-            <option value="contacted">Contacted</option>
-            <option value="responded">Responded</option>
-            <option value="qualified">Qualified</option>
-            <option value="closed">Closed</option>
-            <option value="rejected">Rejected</option>
+            {LIFECYCLE_STAGES.map(stage => (
+              <option key={stage.value} value={stage.value}>{stage.label}</option>
+            ))}
           </select>
         </div>
       )}
@@ -239,7 +239,7 @@ export default function LeadForm({ lead, onSave, onCancel }: LeadFormProps) {
           type="submit"
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
         >
-          {lead ? 'Update Lead' : 'Add Lead'}
+          {lead ? 'Update Account' : 'Add Account'}
         </button>
       </div>
     </form>

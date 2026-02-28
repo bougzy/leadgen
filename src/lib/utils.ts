@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import Papa from 'papaparse';
-import type { Lead, ActivityItem } from '@/types';
+import type { Account, ActivityItem } from '@/types';
 import { calculateLeadScore } from './scoring';
 
 export function generateId(): string {
@@ -35,7 +35,7 @@ export function cn(...classes: (string | boolean | undefined | null)[]): string 
 export function createActivity(
   type: ActivityItem['type'],
   description: string,
-  leadId?: string,
+  accountId?: string,
   campaignId?: string
 ): ActivityItem {
   return {
@@ -43,7 +43,7 @@ export function createActivity(
     type,
     description,
     timestamp: new Date().toISOString(),
-    leadId,
+    accountId,
     campaignId,
   };
 }
@@ -56,7 +56,7 @@ export function parseCSV(text: string): Record<string, string>[] {
   return result.data;
 }
 
-export function csvRowToLead(row: Record<string, string>): Lead {
+export function csvRowToLead(row: Record<string, string>): Account {
   const tags: string[] = [];
   const website = row.website || row.url || '';
 
@@ -65,43 +65,46 @@ export function csvRowToLead(row: Record<string, string>): Lead {
     tags.push(...row.tags.split(';').map(t => t.trim()).filter(Boolean));
   }
 
-  const lead: Lead = {
+  const account: Account = {
     id: generateId(),
-    name: row.name || row.business_name || row.business || '',
+    businessName: row.name || row.business_name || row.business || '',
     contactName: row.contact_name || row.contact || row.first_name || '',
     industry: row.industry || row.category || 'Other',
     location: row.location || row.city || row.address || '',
     website: website || undefined,
-    email: row.email || undefined,
-    phone: row.phone || row.telephone || undefined,
+    contactEmail: row.email || undefined,
+    contactPhone: row.phone || row.telephone || undefined,
     tags,
     leadScore: 0,
     notes: row.notes || '',
-    status: 'new',
+    lifecycleStage: 'prospect',
     pipelineStage: 'prospect',
+    services: [],
+    serviceArea: [],
     source: 'csv_import',
     dateAdded: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 
-  lead.leadScore = calculateLeadScore(lead);
-  return lead;
+  account.leadScore = calculateLeadScore(account);
+  return account;
 }
 
-export function leadsToCSV(leads: Lead[]): string {
-  const headers = ['name', 'contact_name', 'industry', 'location', 'website', 'email', 'phone', 'tags', 'score', 'status', 'notes', 'date_added'];
-  const rows = leads.map(l => [
-    l.name,
-    l.contactName || '',
-    l.industry,
-    l.location,
-    l.website || '',
-    l.email || '',
-    l.phone || '',
-    l.tags.join(';'),
-    l.leadScore.toString(),
-    l.status,
-    l.notes.replace(/,/g, ';'),
-    l.dateAdded,
+export function leadsToCSV(accounts: Account[]): string {
+  const headers = ['business_name', 'contact_name', 'industry', 'location', 'website', 'email', 'phone', 'tags', 'score', 'lifecycle_stage', 'notes', 'date_added'];
+  const rows = accounts.map(a => [
+    a.businessName,
+    a.contactName || '',
+    a.industry,
+    a.location,
+    a.website || '',
+    a.contactEmail || '',
+    a.contactPhone || '',
+    a.tags.join(';'),
+    a.leadScore.toString(),
+    a.lifecycleStage,
+    a.notes.replace(/,/g, ';'),
+    a.dateAdded,
   ]);
 
   return [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
@@ -217,44 +220,47 @@ export function classifyReply(replyText: string): ReplyCategory {
 }
 
 // Sample data generator for testing
-export function generateSampleLeads(): Lead[] {
-  const samples: Partial<Lead>[] = [
-    { name: "Joe's Pizza", contactName: 'Joe Romano', industry: 'Restaurant', location: 'Miami, FL', tags: ['no_website', 'low_reviews'], email: 'joe@joespizza.com' },
-    { name: 'Fit Factory Gym', contactName: 'Sarah Chen', industry: 'Gym', location: 'Miami, FL', website: 'http://fitfactorygym.com', tags: ['bad_website', 'not_mobile_friendly'], email: 'info@fitfactory.com' },
-    { name: 'Luxe Hair Salon', contactName: 'Maria Lopez', industry: 'Salon', location: 'Miami Beach, FL', tags: ['no_website', 'no_social'], phone: '305-555-0123' },
-    { name: 'Downtown Dental', contactName: 'Dr. James Park', industry: 'Dental', location: 'Miami, FL', website: 'http://downtowndental.com', tags: ['outdated_design', 'slow_loading'], email: 'info@downtowndental.com' },
-    { name: 'Ocean View Spa', contactName: 'Lisa Wang', industry: 'Spa', location: 'Miami Beach, FL', tags: ['no_website', 'no_social', 'low_reviews'] },
-    { name: 'Mike\'s Auto Repair', contactName: 'Mike Johnson', industry: 'Auto Repair', location: 'Coral Gables, FL', website: 'http://mikesauto.com', tags: ['bad_website'], email: 'mike@mikesauto.com' },
-    { name: 'Green Thumb Landscaping', contactName: 'Carlos Diaz', industry: 'Landscaping', location: 'Miami, FL', tags: ['no_website', 'no_social'], phone: '305-555-0456' },
-    { name: 'Paws & Claws Pet Care', contactName: 'Emily Brown', industry: 'Pet Services', location: 'Doral, FL', tags: ['no_website', 'low_reviews'], email: 'emily@pawsclaws.com' },
-    { name: 'Flash Photography', contactName: 'David Kim', industry: 'Photography', location: 'Miami, FL', website: 'http://flashphoto.com', tags: ['not_mobile_friendly', 'poor_seo'], email: 'david@flashphoto.com' },
-    { name: 'Bright Smile Dental', contactName: 'Dr. Ana Garcia', industry: 'Dental', location: 'Hialeah, FL', tags: ['no_website', 'low_reviews'] },
-    { name: 'The Burger Joint', contactName: 'Tom Wilson', industry: 'Restaurant', location: 'Miami, FL', website: 'http://burgerjoint.com', tags: ['bad_website', 'no_online_ordering'], email: 'tom@burgerjoint.com' },
-    { name: 'Zen Yoga Studio', contactName: 'Priya Patel', industry: 'Gym', location: 'Coconut Grove, FL', tags: ['no_website', 'no_booking_system'] },
-    { name: 'Quick Clean Services', contactName: 'Rosa Martinez', industry: 'Cleaning', location: 'Miami, FL', tags: ['no_website', 'no_social'], phone: '305-555-0789' },
-    { name: 'Smith & Associates Law', contactName: 'John Smith', industry: 'Legal', location: 'Brickell, FL', website: 'http://smithlaw.com', tags: ['outdated_design', 'poor_seo'], email: 'john@smithlaw.com' },
-    { name: 'Fresh Bites Cafe', contactName: 'Nina Perez', industry: 'Restaurant', location: 'Wynwood, FL', tags: ['no_website', 'no_social', 'no_online_ordering'] },
+export function generateSampleLeads(): Account[] {
+  const samples: Partial<Account>[] = [
+    { businessName: "Joe's Pizza", contactName: 'Joe Romano', industry: 'Restaurant', location: 'Miami, FL', tags: ['no_website', 'low_reviews'], contactEmail: 'joe@joespizza.com' },
+    { businessName: 'Fit Factory Gym', contactName: 'Sarah Chen', industry: 'Gym', location: 'Miami, FL', website: 'http://fitfactorygym.com', tags: ['bad_website', 'not_mobile_friendly'], contactEmail: 'info@fitfactory.com' },
+    { businessName: 'Luxe Hair Salon', contactName: 'Maria Lopez', industry: 'Salon', location: 'Miami Beach, FL', tags: ['no_website', 'no_social'], contactPhone: '305-555-0123' },
+    { businessName: 'Downtown Dental', contactName: 'Dr. James Park', industry: 'Dental', location: 'Miami, FL', website: 'http://downtowndental.com', tags: ['outdated_design', 'slow_loading'], contactEmail: 'info@downtowndental.com' },
+    { businessName: 'Ocean View Spa', contactName: 'Lisa Wang', industry: 'Spa', location: 'Miami Beach, FL', tags: ['no_website', 'no_social', 'low_reviews'] },
+    { businessName: 'Mike\'s Auto Repair', contactName: 'Mike Johnson', industry: 'Auto Repair', location: 'Coral Gables, FL', website: 'http://mikesauto.com', tags: ['bad_website'], contactEmail: 'mike@mikesauto.com' },
+    { businessName: 'Green Thumb Landscaping', contactName: 'Carlos Diaz', industry: 'Landscaping', location: 'Miami, FL', tags: ['no_website', 'no_social'], contactPhone: '305-555-0456' },
+    { businessName: 'Paws & Claws Pet Care', contactName: 'Emily Brown', industry: 'Pet Services', location: 'Doral, FL', tags: ['no_website', 'low_reviews'], contactEmail: 'emily@pawsclaws.com' },
+    { businessName: 'Flash Photography', contactName: 'David Kim', industry: 'Photography', location: 'Miami, FL', website: 'http://flashphoto.com', tags: ['not_mobile_friendly', 'poor_seo'], contactEmail: 'david@flashphoto.com' },
+    { businessName: 'Bright Smile Dental', contactName: 'Dr. Ana Garcia', industry: 'Dental', location: 'Hialeah, FL', tags: ['no_website', 'low_reviews'] },
+    { businessName: 'The Burger Joint', contactName: 'Tom Wilson', industry: 'Restaurant', location: 'Miami, FL', website: 'http://burgerjoint.com', tags: ['bad_website', 'no_online_ordering'], contactEmail: 'tom@burgerjoint.com' },
+    { businessName: 'Zen Yoga Studio', contactName: 'Priya Patel', industry: 'Gym', location: 'Coconut Grove, FL', tags: ['no_website', 'no_booking_system'] },
+    { businessName: 'Quick Clean Services', contactName: 'Rosa Martinez', industry: 'Cleaning', location: 'Miami, FL', tags: ['no_website', 'no_social'], contactPhone: '305-555-0789' },
+    { businessName: 'Smith & Associates Law', contactName: 'John Smith', industry: 'Legal', location: 'Brickell, FL', website: 'http://smithlaw.com', tags: ['outdated_design', 'poor_seo'], contactEmail: 'john@smithlaw.com' },
+    { businessName: 'Fresh Bites Cafe', contactName: 'Nina Perez', industry: 'Restaurant', location: 'Wynwood, FL', tags: ['no_website', 'no_social', 'no_online_ordering'] },
   ];
 
   return samples.map(s => {
-    const lead: Lead = {
+    const account: Account = {
       id: generateId(),
-      name: s.name!,
+      businessName: s.businessName!,
       contactName: s.contactName,
       industry: s.industry!,
       location: s.location!,
       website: s.website,
-      email: s.email,
-      phone: s.phone,
+      contactEmail: s.contactEmail,
+      contactPhone: s.contactPhone,
       tags: s.tags || [],
       leadScore: 0,
       notes: '',
-      status: 'new',
+      lifecycleStage: 'prospect',
       pipelineStage: 'prospect',
+      services: [],
+      serviceArea: [],
       source: 'manual',
       dateAdded: new Date(Date.now() - Math.random() * 30 * 86400000).toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    lead.leadScore = calculateLeadScore(lead);
-    return lead;
+    account.leadScore = calculateLeadScore(account);
+    return account;
   });
 }

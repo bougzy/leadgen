@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { getAllLeads, getAllEmails, getAllCampaigns, getAllActivities, getTodaySendCount, getSettings } from '@/lib/db';
+import { getAllAccounts, getAllEmails, getAllCampaigns, getAllActivities, getTodaySendCount, getSettings } from '@/lib/db';
 import { getSuggestions, getStats, getChartData, getBestSendTimes } from '@/lib/suggestions';
 import { formatRelativeDate } from '@/lib/utils';
-import type { Lead, Email, Campaign, ActivityItem, Suggestion } from '@/types';
+import type { Account, Email, Campaign, ActivityItem, Suggestion } from '@/types';
 import StatsCard from '@/components/ui/StatsCard';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -15,23 +15,27 @@ import {
   BarChart, Bar,
 } from 'recharts';
 
-// ---------- Status colors for the pie chart ----------
-const STATUS_COLORS: Record<string, string> = {
-  new: '#3b82f6',        // blue
-  contacted: '#eab308',  // yellow
-  responded: '#22c55e',  // green
-  qualified: '#a855f7',  // purple
-  closed: '#10b981',     // emerald
-  rejected: '#ef4444',   // red
+// ---------- Lifecycle stage colors for the pie chart ----------
+const LIFECYCLE_COLORS: Record<string, string> = {
+  prospect: '#3b82f6',       // blue
+  contacted: '#eab308',      // yellow
+  engaged: '#22c55e',        // green
+  qualified: '#a855f7',      // purple
+  won: '#10b981',            // emerald
+  active_client: '#06b6d4',  // cyan
+  paused: '#f97316',         // orange
+  churned: '#ef4444',        // red
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  new: 'New',
+const LIFECYCLE_LABELS: Record<string, string> = {
+  prospect: 'Prospect',
   contacted: 'Contacted',
-  responded: 'Responded',
+  engaged: 'Engaged',
   qualified: 'Qualified',
-  closed: 'Closed',
-  rejected: 'Rejected',
+  won: 'Won',
+  active_client: 'Active Client',
+  paused: 'Paused',
+  churned: 'Churned',
 };
 
 // ---------- Shared Recharts tooltip style for dark mode ----------
@@ -53,7 +57,7 @@ function PieTooltip({ active, payload }: { active?: boolean; payload?: Array<{ n
         <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: item.payload.fill }} />
         <span className="font-medium">{item.name}</span>
       </div>
-      <div className="text-gray-300 text-xs mt-1">{item.value} lead{item.value !== 1 ? 's' : ''}</div>
+      <div className="text-gray-300 text-xs mt-1">{item.value} account{item.value !== 1 ? 's' : ''}</div>
     </div>
   );
 }
@@ -75,7 +79,7 @@ function NoDataPlaceholder({ label }: { label: string }) {
 // ==========================================================
 
 export default function Dashboard() {
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [emails, setEmails] = useState<Email[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
@@ -88,12 +92,12 @@ export default function Dashboard() {
     async function load() {
       try {
         const [l, e, c, a] = await Promise.all([
-          getAllLeads(),
+          getAllAccounts(),
           getAllEmails(),
           getAllCampaigns(),
           getAllActivities(),
         ]);
-        setLeads(l);
+        setAccounts(l);
         setEmails(e);
         setCampaigns(c);
         setActivities(a.slice(0, 10));
@@ -111,45 +115,45 @@ export default function Dashboard() {
   }, []);
 
   // ---------- Derived data ----------
-  const stats = useMemo(() => getStats(leads, emails), [leads, emails]);
+  const stats = useMemo(() => getStats(accounts, emails), [accounts, emails]);
   const chartData = useMemo(() => getChartData(emails, 30), [emails]);
   const bestSendTimes = useMemo(() => getBestSendTimes(emails), [emails]);
 
   const statusData = useMemo(() => {
-    return Object.entries(stats.byStatus)
+    return Object.entries(stats.byStage)
       .filter(([, count]) => count > 0)
       .map(([status, count]) => ({
-        name: STATUS_LABELS[status] || status,
+        name: LIFECYCLE_LABELS[status] || status,
         value: count,
-        fill: STATUS_COLORS[status] || '#6b7280',
+        fill: LIFECYCLE_COLORS[status] || '#6b7280',
       }));
-  }, [stats.byStatus]);
+  }, [stats.byStage]);
 
   const industryData = useMemo(() => {
     const counts: Record<string, number> = {};
-    leads.forEach(l => {
-      const ind = l.industry || 'Other';
+    accounts.forEach(a => {
+      const ind = a.industry || 'Other';
       counts[ind] = (counts[ind] || 0) + 1;
     });
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([name, count]) => ({ name, count }));
-  }, [leads]);
+  }, [accounts]);
 
   // Funnel data
   const funnel = useMemo(() => {
     const total = stats.total;
-    const contacted = stats.byStatus.contacted + stats.byStatus.responded + stats.byStatus.qualified + stats.byStatus.closed;
-    const responded = stats.byStatus.responded + stats.byStatus.qualified + stats.byStatus.closed;
-    const qualified = stats.byStatus.qualified + stats.byStatus.closed;
-    const closed = stats.byStatus.closed;
+    const contacted = (stats.byStage.contacted ?? 0) + (stats.byStage.engaged ?? 0) + (stats.byStage.qualified ?? 0) + (stats.byStage.won ?? 0);
+    const engaged = (stats.byStage.engaged ?? 0) + (stats.byStage.qualified ?? 0) + (stats.byStage.won ?? 0);
+    const qualified = (stats.byStage.qualified ?? 0) + (stats.byStage.won ?? 0);
+    const won = stats.byStage.won ?? 0;
     return [
-      { label: 'Total Leads', value: total },
+      { label: 'Total Accounts', value: total },
       { label: 'Contacted', value: contacted },
-      { label: 'Responded', value: responded },
+      { label: 'Engaged', value: engaged },
       { label: 'Qualified', value: qualified },
-      { label: 'Closed', value: closed },
+      { label: 'Won', value: won },
     ];
   }, [stats]);
 
@@ -158,7 +162,7 @@ export default function Dashboard() {
   if (loading) return <LoadingSpinner />;
 
   // ---------- Empty state ----------
-  if (leads.length === 0) {
+  if (accounts.length === 0) {
     return (
       <div>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
@@ -170,8 +174,8 @@ export default function Dashboard() {
         <EmptyState
           icon="🚀"
           title="Get Started with LeadGen"
-          description="Add your first lead to start generating personalized cold emails and tracking your outreach campaigns."
-          actionLabel="Add Your First Lead"
+          description="Add your first account to start generating personalized cold emails and tracking your outreach campaigns."
+          actionLabel="Add Your First Account"
           onAction={() => window.location.href = '/leads'}
         />
       </div>
@@ -205,10 +209,10 @@ export default function Dashboard() {
 
       {/* ===== Stats Cards ===== */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <StatsCard label="Total Leads" value={stats.total} icon="👥" color="bg-blue-50 dark:bg-blue-900/20" />
-        <StatsCard label="Contacted" value={stats.byStatus.contacted} icon="📧" color="bg-yellow-50 dark:bg-yellow-900/20" />
-        <StatsCard label="Responses" value={stats.byStatus.responded} icon="💬" color="bg-green-50 dark:bg-green-900/20" />
-        <StatsCard label="Closed" value={stats.byStatus.closed} icon="🎉" color="bg-purple-50 dark:bg-purple-900/20" />
+        <StatsCard label="Total Accounts" value={stats.total} icon="👥" color="bg-blue-50 dark:bg-blue-900/20" />
+        <StatsCard label="Contacted" value={stats.byStage.contacted ?? 0} icon="📧" color="bg-yellow-50 dark:bg-yellow-900/20" />
+        <StatsCard label="Engaged" value={stats.byStage.engaged ?? 0} icon="💬" color="bg-green-50 dark:bg-green-900/20" />
+        <StatsCard label="Won" value={stats.byStage.won ?? 0} icon="🎉" color="bg-purple-50 dark:bg-purple-900/20" />
         <StatsCard label="Avg Score" value={stats.avgScore} icon="⭐" color="bg-orange-50 dark:bg-orange-900/20" />
       </div>
 
@@ -291,7 +295,7 @@ export default function Dashboard() {
       <div className="grid md:grid-cols-2 gap-6">
         {/* Pie / Donut Chart - Lead Status */}
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Lead Status Distribution</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Lifecycle Stage Distribution</h2>
           {statusData.length > 0 ? (
             <div className="h-[280px] flex items-center justify-center">
               <ResponsiveContainer width="100%" height="100%">
@@ -316,7 +320,7 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
           ) : (
-            <NoDataPlaceholder label="No leads to display." />
+            <NoDataPlaceholder label="No accounts to display." />
           )}
           {/* Legend */}
           {statusData.length > 0 && (
@@ -358,7 +362,7 @@ export default function Dashboard() {
                     contentStyle={tooltipStyle}
                     labelStyle={{ color: '#d1d5db', marginBottom: 4 }}
                     cursor={{ fill: 'rgba(107,114,128,0.1)' }}
-                    formatter={(value) => [`${value} lead${value !== 1 ? 's' : ''}`, 'Count']}
+                    formatter={(value) => [`${value} account${value !== 1 ? 's' : ''}`, 'Count']}
                   />
                   <Bar dataKey="count" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
                 </BarChart>
@@ -529,7 +533,7 @@ export default function Dashboard() {
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Activity</h2>
           {activities.length === 0 ? (
-            <p className="text-gray-500 dark:text-gray-400 text-sm">No activity yet. Start by adding leads!</p>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">No activity yet. Start by adding accounts!</p>
           ) : (
             <div className="space-y-3">
               {activities.map(a => (

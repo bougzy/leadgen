@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getLead, getEmailsByLead, getAllActivities, getSettings } from '@/lib/db';
+import { getAccount, getEmailsByAccount, getAllActivities, getSettings } from '@/lib/db';
 import { getScoreColor, getScoreBgColor, getScoreLabel } from '@/lib/scoring';
 import { formatRelativeDate, formatDate } from '@/lib/utils';
-import type { Lead, Email, ActivityItem, UserSettings } from '@/types';
-import { LEAD_STATUSES, PIPELINE_STAGES } from '@/types';
+import type { Account, Email, ActivityItem, UserSettings } from '@/types';
+import { LIFECYCLE_STAGES, PIPELINE_STAGES } from '@/types';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 // Timeline item: a merged view of emails and activities
@@ -68,12 +68,12 @@ function getTagColor(tag: string): string {
   return TAG_COLORS[tag] || 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300';
 }
 
-export default function LeadDetailPage() {
+export default function AccountDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const leadId = params.id as string;
+  const accountId = params.id as string;
 
-  const [lead, setLead] = useState<Lead | null>(null);
+  const [account, setAccount] = useState<Account | null>(null);
   const [emails, setEmails] = useState<Email[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -83,41 +83,41 @@ export default function LeadDetailPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [leadData, emailData, allActivities, settingsData] = await Promise.all([
-          getLead(leadId),
-          getEmailsByLead(leadId),
+        const [accountData, emailData, allActivities, settingsData] = await Promise.all([
+          getAccount(accountId),
+          getEmailsByAccount(accountId),
           getAllActivities(),
           getSettings(),
         ]);
 
-        if (!leadData) {
+        if (!accountData) {
           setNotFound(true);
           return;
         }
 
-        setLead(leadData);
+        setAccount(accountData);
         setEmails(emailData);
-        setActivities(allActivities.filter(a => a.leadId === leadId));
+        setActivities(allActivities.filter(a => a.accountId === accountId));
         setSettings(settingsData);
       } catch (err) {
-        console.error('Failed to load lead data:', err);
+        console.error('Failed to load account data:', err);
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [leadId]);
+  }, [accountId]);
 
   if (loading) return <LoadingSpinner size="lg" />;
 
-  if (notFound || !lead) {
+  if (notFound || !account) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <div className="text-6xl mb-4">🔍</div>
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Lead Not Found</h2>
-        <p className="text-gray-600 dark:text-gray-400 mb-6">The lead you are looking for does not exist or has been removed.</p>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Account Not Found</h2>
+        <p className="text-gray-600 dark:text-gray-400 mb-6">The account you are looking for does not exist or has been removed.</p>
         <button onClick={() => router.push('/leads')} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-          Back to Leads
+          Back to Accounts
         </button>
       </div>
     );
@@ -199,8 +199,8 @@ export default function LeadDetailPage() {
   // Sort descending by date
   timelineItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  const statusInfo = LEAD_STATUSES.find(s => s.value === lead.status);
-  const stageInfo = PIPELINE_STAGES.find(s => s.value === lead.pipelineStage);
+  const stageInfo = LIFECYCLE_STAGES.find(s => s.value === account.lifecycleStage);
+  const pipelineInfo = PIPELINE_STAGES.find(s => s.value === account.pipelineStage);
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -213,20 +213,20 @@ export default function LeadDetailPage() {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Back to Leads
+          Back to Accounts
         </button>
         <div className="flex items-center gap-2">
           <Link
-            href={`/emails?leadId=${lead.id}`}
+            href={`/emails?accountId=${account.id}`}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
           >
             Generate Email
           </Link>
           <Link
-            href={`/leads#${lead.id}`}
+            href={`/leads#${account.id}`}
             className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
           >
-            Edit Lead
+            Edit Account
           </Link>
         </div>
       </div>
@@ -235,28 +235,28 @@ export default function LeadDetailPage() {
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{lead.name}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{account.businessName}</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">
-              {lead.industry} &middot; {lead.location}
+              {account.industry} &middot; {account.location}
             </p>
-            {lead.contactName && (
+            {account.contactName && (
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Contact: {lead.contactName}
+                Contact: {account.contactName}
               </p>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${getScoreColor(lead.leadScore)} ${getScoreBgColor(lead.leadScore)}`}>
-              Score: {lead.leadScore} &middot; {getScoreLabel(lead.leadScore)}
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${getScoreColor(account.leadScore)} ${getScoreBgColor(account.leadScore)}`}>
+              Score: {account.leadScore} &middot; {getScoreLabel(account.leadScore)}
             </span>
-            {statusInfo && (
-              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusInfo.color}`}>
-                {statusInfo.label}
-              </span>
-            )}
             {stageInfo && (
               <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${stageInfo.color}`}>
                 {stageInfo.label}
+              </span>
+            )}
+            {pipelineInfo && (
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${pipelineInfo.color}`}>
+                {pipelineInfo.label}
               </span>
             )}
           </div>
@@ -264,9 +264,9 @@ export default function LeadDetailPage() {
 
         {/* Date info */}
         <div className="mt-4 flex flex-wrap gap-4 text-xs text-gray-500 dark:text-gray-400">
-          <span>Added: {formatDate(lead.dateAdded)}</span>
-          {lead.lastContacted && <span>Last contacted: {formatRelativeDate(lead.lastContacted)}</span>}
-          {lead.source && <span>Source: {lead.source.replace('_', ' ')}</span>}
+          <span>Added: {formatDate(account.dateAdded)}</span>
+          {account.lastContacted && <span>Last contacted: {formatRelativeDate(account.lastContacted)}</span>}
+          {account.source && <span>Source: {account.source.replace('_', ' ')}</span>}
         </div>
       </div>
 
@@ -277,48 +277,48 @@ export default function LeadDetailPage() {
           <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wider">Contact Info</h2>
             <div className="space-y-3">
-              {lead.email && (
+              {account.contactEmail && (
                 <div className="flex items-start gap-3">
                   <svg className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  <a href={`mailto:${lead.email}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline break-all">
-                    {lead.email}
+                  <a href={`mailto:${account.contactEmail}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline break-all">
+                    {account.contactEmail}
                   </a>
                 </div>
               )}
-              {lead.phone && (
+              {account.contactPhone && (
                 <div className="flex items-start gap-3">
                   <svg className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
-                  <a href={`tel:${lead.phone}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                    {lead.phone}
+                  <a href={`tel:${account.contactPhone}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                    {account.contactPhone}
                   </a>
                 </div>
               )}
-              {lead.website && (
+              {account.website && (
                 <div className="flex items-start gap-3">
                   <svg className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                   </svg>
-                  <a href={lead.website} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 hover:underline break-all">
-                    {lead.website.replace(/^https?:\/\//, '')}
+                  <a href={account.website} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 hover:underline break-all">
+                    {account.website.replace(/^https?:\/\//, '')}
                   </a>
                 </div>
               )}
-              {!lead.email && !lead.phone && !lead.website && (
+              {!account.contactEmail && !account.contactPhone && !account.website && (
                 <p className="text-sm text-gray-400 dark:text-gray-500 italic">No contact info available</p>
               )}
             </div>
           </div>
 
           {/* Tags */}
-          {lead.tags.length > 0 && (
+          {account.tags.length > 0 && (
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wider">Issues / Tags</h2>
               <div className="flex flex-wrap gap-2">
-                {lead.tags.map(tag => (
+                {account.tags.map(tag => (
                   <span key={tag} className={`px-2.5 py-1 rounded-full text-xs font-medium ${getTagColor(tag)}`}>
                     {tag.replace(/_/g, ' ')}
                   </span>
@@ -328,11 +328,11 @@ export default function LeadDetailPage() {
           )}
 
           {/* Deal Value */}
-          {lead.dealValue !== undefined && lead.dealValue > 0 && (
+          {account.dealValue !== undefined && account.dealValue > 0 && (
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wider">Deal Value</h2>
               <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                ${lead.dealValue.toLocaleString()}
+                ${account.dealValue.toLocaleString()}
               </p>
             </div>
           )}
@@ -340,8 +340,8 @@ export default function LeadDetailPage() {
           {/* Notes */}
           <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wider">Notes</h2>
-            {lead.notes ? (
-              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">{lead.notes}</p>
+            {account.notes ? (
+              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">{account.notes}</p>
             ) : (
               <p className="text-sm text-gray-400 dark:text-gray-500 italic">No notes yet.</p>
             )}
@@ -390,7 +390,7 @@ export default function LeadDetailPage() {
                 <div className="text-4xl mb-3 opacity-50">📭</div>
                 <p className="text-gray-500 dark:text-gray-400 font-medium">No activity yet</p>
                 <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-                  Send an email or update this lead to see activity here.
+                  Send an email or update this account to see activity here.
                 </p>
               </div>
             ) : (
